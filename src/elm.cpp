@@ -16,7 +16,7 @@ SSD1306Wire tft(0x3c, 5, 4);
 #define SCREEN_HEIGHT 64
 
 BluetoothSerial SerialBT;
-#define ELM_PORT SerialBT
+// #define ELM_PORT SerialBT
 #define DEBUG_PORT Serial
 
 ELM327 myELM327;
@@ -26,21 +26,12 @@ typedef enum
   ENG_RPM = FIRST,
   SPEED,
   ENG_LOAD,
-  TORQUE,
   LAST
 } obd_pid_states;
 
 float rpm, kph, load;
 static char buffer[32];
 
-void print_binary(uint32_t number)
-{
-  if (number >> 1)
-  {
-    print_binary(number >> 1);
-  }
-  Serial.print((number & 1) ? '1' : '0');
-}
 
 /*
 -----------------
@@ -49,7 +40,7 @@ void print_binary(uint32_t number)
   If 'P' is pressed, outputs the PIDs that the vehicle supports.
 -----------------
 */
-void quit_prog_if_keypressed()
+void keycommands()
 {
   if (Serial.available())
   {
@@ -142,12 +133,11 @@ void setup()
   Serial.println("booting");
 
   SerialBT.begin(myName, true);
-  Serial.printf("The device \"%s\" started in master mode, make sure slave BT device is on!\n", myName.c_str());
 
-#ifndef USE_NAME
+// #ifndef USE_NAME
   SerialBT.setPin(pin);
   Serial.println("Using PIN");
-#endif
+// #endif
   bool connected;
 // connect(address) is fast (up to 10 secs max), connect(slaveName) is slow (up to 30 secs max) as it needs
 // to resolve slaveName to address first, but it allows to connect to different devices with the same name.
@@ -156,7 +146,7 @@ void setup()
   connected = SerialBT.connect(slaveName);
   Serial.printf("Connecting to slave BT device named \"%s\"\n", slaveName.c_str());
 #else
-  connected = SerialBT.connect(address);
+  connected = SerialBT.connect(address,0,ESP_SPP_SEC_NONE,ESP_SPP_ROLE_MASTER);
   Serial.print("Connecting to slave BT device with MAC ");
   Serial.println(MACadd);
 #endif
@@ -170,29 +160,30 @@ void setup()
     while (!SerialBT.connected(10000))
     {
       Serial.println("Failed to connect. Make sure remote device is available and in range, then restart app.");
+      ESP.restart();
     }
   }
-  // Disconnect() may take up to 10 secs max
-  if (SerialBT.disconnect())
-  {
-    Serial.println("Disconnected Successfully!");
-  }
-  // This would reconnect to the slaveName(will use address, if resolved) or address used with connect(slaveName/address).
-  SerialBT.connect();
-  if (connected)
-  {
-    Serial.println("Reconnected Successfully!");
-  }
-  else
-  {
-    while (!SerialBT.connected(10000))
-    {
-      Serial.println("Failed to reconnect. Make sure remote device is available and in range, then restart app.");
-    }
-  }
+  // // Disconnect() may take up to 10 secs max
+  // if (SerialBT.disconnect())
+  // {
+  //   Serial.println("Disconnected Successfully!");
+  // }
+  // // This would reconnect to the slaveName(will use address, if resolved) or address used with connect(slaveName/address).
+  // SerialBT.connect();
+  // if (connected)
+  // {
+  //   Serial.println("Reconnected Successfully!");
+  // }
+  // else
+  // {
+  //   while (!SerialBT.connected(10000))
+  //   {
+  //     Serial.println("Failed to reconnect. Make sure remote device is available and in range, then restart app.");
+  //   }
+  // }
 
-  ELM_PORT.setPin("1234");
-  Serial.println("The device started, now you can pair it with bluetooth!");
+  // ELM_PORT.setPin("1234");
+  // Serial.println("The device started, now you can pair it with bluetooth!");
 
   // if (btScanAsync)
   // {
@@ -251,7 +242,7 @@ void setup()
   //   ESP.restart();
   // }
 
-  if (!myELM327.begin(ELM_PORT, true, 2000))
+  if (!myELM327.begin(SerialBT, true, 2000))
   {
     Serial.println("Couldn't connect to OBD scanner - Phase 2");
     tft.clear();
@@ -264,9 +255,17 @@ void setup()
   Serial.println("Connected to ELM327");
   tft.clear();
   tft.drawString(0, 0, "Connected to ELM327");
+  tft.clear();
 }
 
 void loop()
+{
+  processOBD();
+  keycommands();
+}
+
+
+void processOBD()
 {
   static int state;
   state = state % LAST;
@@ -307,27 +306,14 @@ void loop()
     }
     break;
   }
-  case TORQUE:
-  {
-    auto v = myELM327.torque();
-    if (myELM327.nb_rx_state == ELM_SUCCESS)
-    {
-      Serial.printf("torque: %f", v);
-      tft.drawStringf(0, 45, buffer, "torque: %.0f", v);
-      state++;
-    }
-    break;
-  }
   }
 
-  // if (myELM327.nb_rx_state != ELM_GETTING_MSG)
-  // {
-  //   myELM327.printError();
-  //   tft.clear();
-  //   tft.drawStringf(0, 32, buffer, "ERROR: %d", myELM327.nb_rx_state);
-  //   state++;
-  // }
+  if (myELM327.nb_rx_state != ELM_SUCCESS && myELM327.nb_rx_state != ELM_GETTING_MSG)
+  {
+    myELM327.printError();
+    tft.clear();
+    tft.drawStringf(0, 32, buffer, "ERROR: %d", myELM327.nb_rx_state);
+    state++;
+  }
   tft.display();
-  quit_prog_if_keypressed();
-  // sleep(10);
 }
