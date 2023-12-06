@@ -5,14 +5,6 @@
 #include "SSD1306Wire.h"
 #include <bms2.h>
 
-#if !defined(CONFIG_BT_ENABLED) || !defined(CONFIG_BLUEDROID_ENABLED)
-#error Bluetooth is not enabled! Please run `make menuconfig` to and enable it
-#endif
-
-#if !defined(CONFIG_BT_SPP_ENABLED)
-#error Serial Bluetooth not available or not enabled. It is only available for the ESP32 chip.
-#endif
-
 SSD1306Wire tft(0x3c, 5, 4);
 #define SCREEN_WIDTH 128
 #define SCREEN_HEIGHT 64
@@ -24,39 +16,17 @@ BluetoothSerial SerialBT;
 ELM327 myELM327;
 typedef enum
 {
-  FIRST,
-  ENG_RPM = FIRST,
-  SPEED,
+  FIRST_PID,
+  ENG_RPM = FIRST_PID,
   ENG_LOAD,
-  LAST
+  // SPEED,
+  LAST_PID
 } obd_pid_states;
 
-float rpm, kph, load;
 static char buffer[32];
 
 BleSerialClient BLEClient;
 
-// void asetup()
-// {
-// 	//Start the BLE Serial
-// 	//Enter the Bluetooth name here
-// 	ble.begin("BleSerialTest");
-// }
-
-// void aloop()
-// {
-// 	//The usage is similar to Serial
-// 	ble.println("Hello!");
-// 	delay(1000);
-// }
-
-/*
------------------
-  Detect if user has pressed 'd' key on serial monitor keyboard, if yes
-  End the bluetooth connection and halt the processor
-  If 'P' is pressed, outputs the PIDs that the vehicle supports.
------------------
-*/
 void keycommands()
 {
   if (Serial.available())
@@ -114,20 +84,25 @@ void keycommands()
   }
 }
 
-static bool btScanAsync = true;
-static bool btScanSync = true;
-
-#define BT_DISCOVER_TIME 10000
-
-void btAdvertisedDeviceFound(BTAdvertisedDevice *pDevice)
-{
-  Serial.printf("Found a device asynchronously: %s\n", pDevice->toString().c_str());
-}
-
 // #define USE_NAME          // Comment this to use MAC address instead of a slaveName
 const char *pin = "1234"; // Change this to reflect the pin expected by the real slave BT device
 
 // Name: OBDII, Address: 66:1e:21:00:aa:fe, cod: 23603, rssi: -44
+OverkillSolarBms2 bms = OverkillSolarBms2();
+#define m_last_basic_info_query_rate 250
+#define m_last_cell_voltages_query_rate 1000
+BasicInfo bmsInfo;
+float CellVoltages[4];
+TaskHandle_t vBMS_Task_hdl, vOBD_Task_hdl, vTFT_Task_hdl;
+
+enum NotificationBits
+{
+  BMS_INIT_BIT = 1 << 0,
+  BMS_UPDATE_BIT = 1 << 1,
+  CELL_UPDATE_BIT = 1 << 2,
+  OBD_INIT_BIT = 1 << 3,
+  OBD_UPDATE_BIT = 1 << 4,
+};
 
 #ifdef USE_NAME
 String slaveName = "OBDII"; // Change this to reflect the real name of your slave BT device
@@ -138,165 +113,32 @@ uint8_t address[6] = {0x66, 0x1e, 0x21, 0x00, 0xaa, 0xfe}; // Change this to ref
 
 String myName = "ESP32-BT-Master";
 
-void processOBD()
+typedef struct OBDdata_t
+{
+  uint16_t rpm;
+  uint16_t speed;
+  uint8_t load;
+  bool coasting;
+} OBDdata_t;
+OBDdata_t obdData;
+
+void vOBD_Task(void *parameter)
 {
   static int state;
-  state = state % LAST;
 
-  switch (state)
+  if (!SerialBT.begin(myName, true))
   {
-  case ENG_RPM:
-  {
-    rpm = myELM327.rpm();
-    if (myELM327.nb_rx_state == ELM_SUCCESS)
-    {
-      Serial.printf("rpm: %.0f", rpm);
-      tft.drawStringf(0, 0, buffer, "U/min: %.0f", rpm);
-      state++;
-    }
-    break;
+    Serial.println("An error occurred initializing Bluetooth");
+    sleep(1000);
+    ESP.restart();
   }
 
-  case SPEED:
+  if (!SerialBT.setPin(pin))
   {
-    kph = myELM327.kph();
-    if (myELM327.nb_rx_state == ELM_SUCCESS)
-    {
-      Serial.printf("km/h: %.0f", kph);
-      tft.drawStringf(0, 15, buffer, "km/h: %.0f", kph);
-      state++;
-    }
-    break;
+    Serial.println("An error occurred setting the PIN");
+    sleep(1000);
+    ESP.restart();
   }
-  case ENG_LOAD:
-  {
-    load = myELM327.engineLoad();
-    if (myELM327.nb_rx_state == ELM_SUCCESS)
-    {
-      Serial.printf("load: %f", load);
-      tft.drawStringf(0, 30, buffer, "load: %.0f", load);
-      state++;
-    }
-    break;
-  }
-  }
-
-  if (myELM327.nb_rx_state != ELM_SUCCESS && myELM327.nb_rx_state != ELM_GETTING_MSG)
-  {
-    myELM327.printError();
-    tft.clear();
-    tft.drawStringf(0, 32, buffer, "ERROR: %d", myELM327.nb_rx_state);
-    state++;
-  }
-  tft.display();
-}
-OverkillSolarBms2 bms = OverkillSolarBms2();
-#define m_last_basic_info_query_rate 250
-#define m_last_cell_voltages_query_rate 1000
-BasicInfo bmsInfo;
-float CellVoltages[4];
-TaskHandle_t xBLETask, xOBDTask, xTFTTask;
-// bits are defined to represent each notification source
-#define BMS_BIT    0x01
-#define CELL_BIT    0x02
-
-void BmsTask(void *parameter)
-{
-  static uint32_t
-      m_last_basic_info_query_time = 0,
-      m_last_cell_voltages_query_time = 0;
-  BLEClient.begin(myName.c_str());
-
-  bms.begin(&BLEClient);
-
-  while (true)
-  {
-    if (BLEClient.connected())
-    {
-      log_d("BLEClient connected");
-      BLEClient.bleLoop();
-      bms.main_task(false);
-      uint32_t now = millis();
-      if (millis() - m_last_basic_info_query_time >= m_last_basic_info_query_rate)
-      {
-        bms.query_0x03_basic_info();
-        BasicInfo bmsInfo = bms.get_BasicInfo();
-        log_i("BMS Info: %.2fV %.2fA %.2fW",
-              bmsInfo.voltage / 1000.0, bmsInfo.current / 1000.0, bmsInfo.voltage / 1000.0 * bmsInfo.current / 1000.0);
-        xTaskNotify(xTFTTask, BMS_BIT, eSetBits);
-        m_last_basic_info_query_time = millis();
-      }
-      if (millis() - m_last_cell_voltages_query_time >= m_last_cell_voltages_query_rate)
-      {
-        bms.query_0x04_cell_voltages();
-        for (size_t i = 0; i < 4; i++)
-          CellVoltages[i] = bms.get_cell_voltage(i);
-        xTaskNotify(xTFTTask, CELL_BIT, eSetBits);
-        m_last_cell_voltages_query_time = millis();
-      }
-      vTaskDelay(pdMS_TO_TICKS(10));
-    }
-    else
-    {
-      log_e("BLEClient not connected");
-      vTaskDelay(pdMS_TO_TICKS(3000));
-    }
-  }
-}
-void TFTTask(void *parameter)
-{
-  BaseType_t xResult;
-  tft.init();
-  tft.flipScreenVertically();
-  tft.setFont(ArialMT_Plain_10);
-  tft.drawString(SCREEN_WIDTH / 2, SCREEN_HEIGHT / 2, "Booting");
-  tft.display();
-xResult =  xTaskNotifyWait(0, 0, NULL, portMAX_DELAY);
-      if( xResult == pdPASS )
-      {
-         /* A notification was received.  See which bits were set. */
-         if( ( ulNotifiedValue & TX_BIT ) != 0 )
-         {
-            /* The TX ISR has set a bit. */
-            prvProcessTx();
-         }
-
-         if( ( ulNotifiedValue & RX_BIT ) != 0 )
-         {
-            /* The RX ISR has set a bit. */
-            prvProcessRx();
-         }
-      }
-      else
-      {
-         /* Did not receive a notification within the expected time. */
-         prvCheckForErrors();
-      }
-    tft.clear();
-  tft.drawString(0, 0, "Connected to ELM327");
-  tft.clear();
-}
-void setup()
-{
-
-  DEBUG_PORT.begin(115200);
-  Serial.println("booting");
-
-  xTaskCreatePinnedToCore(
-      BmsTask,         /* Function to implement the task */
-      "BLETask",       /* Name of the task */
-      1000,            /* Stack size in words */
-      NULL,            /* Task input parameter */
-      0,               /* Priority of the task */
-      &xBLETask,       /* Task handle. */
-      tskNO_AFFINITY); /* Core where the task should run */
-
-  SerialBT.begin(myName, true);
-
-  // #ifndef USE_NAME
-  SerialBT.setPin(pin);
-  Serial.println("Using PIN");
-  // #endif
   bool connected;
 // connect(address) is fast (up to 10 secs max), connect(slaveName) is slow (up to 30 secs max) as it needs
 // to resolve slaveName to address first, but it allows to connect to different devices with the same name.
@@ -322,6 +164,221 @@ void setup()
       ESP.restart();
     }
   }
+
+  if (!myELM327.begin(SerialBT, true, 2000))
+  {
+    Serial.println("Couldn't connect to OBD scanner - Phase 2");
+    ESP.restart();
+  }
+  xTaskNotify(vTFT_Task_hdl, NotificationBits::OBD_INIT_BIT, eSetBits);
+  while (true)
+  {
+    state = state % LAST_PID;
+    switch (state)
+    {
+    case ENG_RPM:
+    {
+      auto val = myELM327.rpm();
+      if (myELM327.nb_rx_state == ELM_SUCCESS)
+      {
+        obdData.rpm = val;
+        state++;
+      }
+      break;
+    }
+    case ENG_LOAD:
+    {
+      auto val = myELM327.engineLoad();
+      if (myELM327.nb_rx_state == ELM_SUCCESS)
+      {
+        obdData.load = val;
+        obdData.coasting = (obdData.rpm > 0 && obdData.load == 0);
+        xTaskNotify(vTFT_Task_hdl, NotificationBits::OBD_UPDATE_BIT, eSetBits);
+        state++;
+      }
+      break;
+    }
+
+      // case SPEED:
+      // {
+      //   kph = myELM327.kph();
+      //   if (myELM327.nb_rx_state == ELM_SUCCESS)
+      //   {
+      //     Serial.printf("km/h: %.0f", kph);
+      //     tft.drawStringf(0, 15, buffer, "km/h: %.0f", kph);
+      //     state++;
+      //   }
+      //   break;
+      // }
+    }
+
+    if (myELM327.nb_rx_state != ELM_SUCCESS && myELM327.nb_rx_state != ELM_GETTING_MSG)
+    {
+      myELM327.printError();
+      state++;
+    }
+    vTaskDelay(pdMS_TO_TICKS(10));
+  }
+}
+
+void vBMS_Task(void *parameter)
+{
+  static uint32_t
+      m_last_basic_info_query_time = 0,
+      m_last_cell_voltages_query_time = 0;
+  BLEClient.begin(myName.c_str());
+
+  bms.begin(&BLEClient);
+
+  while (true)
+  {
+    if (BLEClient.connected())
+    {
+      log_d("BLEClient connected");
+      BLEClient.bleLoop();
+      bms.main_task(false);
+      uint32_t now = millis();
+
+      if (millis() - m_last_basic_info_query_time >= m_last_basic_info_query_rate)
+      {
+        bms.query_0x03_basic_info();
+        BasicInfo bmsInfo = bms.get_BasicInfo();
+        log_i("BMS Info: %.2fV %.2fA %.2fW",
+              bmsInfo.voltage / 1000.0, bmsInfo.current / 1000.0, bmsInfo.voltage / 1000.0 * bmsInfo.current / 1000.0);
+        xTaskNotify(vTFT_Task_hdl, NotificationBits::BMS_UPDATE_BIT, eSetBits);
+        m_last_basic_info_query_time = millis();
+      }
+
+      if (millis() - m_last_cell_voltages_query_time >= m_last_cell_voltages_query_rate)
+      {
+        bms.query_0x04_cell_voltages();
+        for (size_t i = 0; i < 4; i++)
+          CellVoltages[i] = bms.get_cell_voltage(i);
+        xTaskNotify(vTFT_Task_hdl, NotificationBits::CELL_UPDATE_BIT, eSetBits);
+        m_last_cell_voltages_query_time = millis();
+      }
+      vTaskDelay(pdMS_TO_TICKS(10));
+    }
+    else
+    {
+      log_e("BLEClient not connected");
+      vTaskDelay(pdMS_TO_TICKS(3000));
+    }
+  }
+}
+const TickType_t xMaxBlockTime = pdMS_TO_TICKS(2000);
+
+void vTFT_Task(void *parameter)
+{
+  BaseType_t xResult;
+  tft.init();
+  tft.flipScreenVertically();
+  tft.setFont(ArialMT_Plain_10);
+  tft.drawString(SCREEN_WIDTH / 2, SCREEN_HEIGHT / 2, "Booting");
+  tft.display();
+  uint32_t ulNotifiedValue;
+
+  if (xTaskNotifyWait(pdFALSE, ULONG_MAX, &ulNotifiedValue, xMaxBlockTime) == pdPASS)
+  {
+    if (ulNotifiedValue & NotificationBits::BMS_INIT_BIT)
+    {
+      log_i("BMS init received");
+      tft.clear();
+      tft.setFont(ArialMT_Plain_16);
+      tft.drawString(32, 0, "BMS Connected");
+      tft.display();
+    }
+
+    if (ulNotifiedValue & NotificationBits::BMS_UPDATE_BIT)
+    {
+      log_i("BMS update received");
+      tft.clear();
+      tft.setFont(ArialMT_Plain_16);
+      tft.drawString(32, 0, "BMS Connected");
+      tft.drawString(0, 16, "Voltage: " + String(bmsInfo.voltage / 1000.0) + "V");
+      tft.drawString(0, 32, "Current: " + String(bmsInfo.current / 1000.0) + "A");
+      tft.drawString(0, 48, "Power: " + String(bmsInfo.voltage / 1000.0 * bmsInfo.current / 1000.0) + "W");
+      tft.display();
+    }
+    if (ulNotifiedValue & NotificationBits::CELL_UPDATE_BIT)
+    {
+      log_i("Cell update received");
+      tft.clear();
+      tft.setFont(ArialMT_Plain_16);
+      tft.drawString(32, 0, "BMS Connected");
+      tft.drawString(0, 16, "Cell 1: " + String(CellVoltages[0] / 1000.0) + "V");
+      tft.drawString(0, 32, "Cell 2: " + String(CellVoltages[1] / 1000.0) + "V");
+      tft.drawString(0, 48, "Cell 3: " + String(CellVoltages[2] / 1000.0) + "V");
+      tft.drawString(0, 64, "Cell 4: " + String(CellVoltages[3] / 1000.0) + "V");
+      tft.display();
+    }
+
+    if (ulNotifiedValue & NotificationBits::OBD_INIT_BIT)
+    {
+      log_i("OBD init received");
+      tft.clear();
+      tft.setFont(ArialMT_Plain_16);
+      tft.drawString(32, 0, "Connected to ELM327");
+      tft.display();
+    }
+
+    if (ulNotifiedValue & NotificationBits::OBD_UPDATE_BIT)
+    {
+      log_i("OBD update received");
+      obdData.coasting ? tft.invertDisplay() : tft.normalDisplay();
+      tft.clear();
+      tft.setFont(ArialMT_Plain_16);
+      tft.drawString(0, 16, "RPM: " + String(obdData.rpm));
+      tft.drawString(0, 32, "Speed: " + String(obdData.speed));
+      tft.drawString(0, 48, "Load: " + String(obdData.load));
+      tft.drawString(0, 64, "Coasting: " + String(obdData.coasting));
+      tft.display();
+    }
+  }
+  else
+  {
+    log_e("Did not receive a notification within the expected time.");
+    tft.clear();
+    tft.setFont(ArialMT_Plain_16);
+    tft.drawString(32, 0, "Offline");
+    tft.display();
+  }
+}
+void setup()
+{
+
+  DEBUG_PORT.begin(115200);
+  Serial.println("booting");
+
+  xTaskCreatePinnedToCore(
+      vTFT_Task,         /* Function to implement the task */
+      "TFT",            /* Name of the task */
+      1000,            /* Stack size in words */
+      NULL,            /* Task input parameter */
+      10,               /* Priority of the task */
+      &vTFT_Task_hdl,       /* Task handle. */
+      tskNO_AFFINITY); /* Core where the task should run */
+
+
+  xTaskCreatePinnedToCore(
+      vBMS_Task,         /* Function to implement the task */
+      "BMS",            /* Name of the task */
+      1000,            /* Stack size in words */
+      NULL,            /* Task input parameter */
+      5,               /* Priority of the task */
+      &vBMS_Task_hdl,       /* Task handle. */
+      tskNO_AFFINITY); /* Core where the task should run */
+
+
+  xTaskCreatePinnedToCore(
+      vOBD_Task,         /* Function to implement the task */
+      "OBD",            /* Name of the task */
+      1000,            /* Stack size in words */
+      NULL,            /* Task input parameter */
+      3,               /* Priority of the task */
+      &vOBD_Task_hdl,       /* Task handle. */
+      tskNO_AFFINITY); /* Core where the task should run */
+
   // // Disconnect() may take up to 10 secs max
   // if (SerialBT.disconnect())
   // {
@@ -401,22 +458,9 @@ void setup()
   //   ESP.restart();
   // }
 
-  if (!myELM327.begin(SerialBT, true, 2000))
-  {
-    Serial.println("Couldn't connect to OBD scanner - Phase 2");
-    tft.clear();
-    tft.drawStringMaxWidth(0, 0, 128, "Couldn't connect to OBD scanner - Phase 2");
-    tft.display();
-    sleep(1000);
-    ESP.restart();
-  }
-
-  Serial.println("Connected to ELM327");
-
 }
 
 void loop()
 {
-  processOBD();
   keycommands();
 }
