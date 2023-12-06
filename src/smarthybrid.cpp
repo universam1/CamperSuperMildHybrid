@@ -1,7 +1,9 @@
 #include <Arduino.h>
 #include "BluetoothSerial.h"
 #include "ELMduino.h"
+#include "BleSerialClient.h"
 #include "SSD1306Wire.h"
+#include <bms2.h>
 
 #if !defined(CONFIG_BT_ENABLED) || !defined(CONFIG_BLUEDROID_ENABLED)
 #error Bluetooth is not enabled! Please run `make menuconfig` to and enable it
@@ -32,6 +34,21 @@ typedef enum
 float rpm, kph, load;
 static char buffer[32];
 
+BleSerialClient BLEClient;
+
+// void asetup()
+// {
+// 	//Start the BLE Serial
+// 	//Enter the Bluetooth name here
+// 	ble.begin("BleSerialTest");
+// }
+
+// void aloop()
+// {
+// 	//The usage is similar to Serial
+// 	ble.println("Hello!");
+// 	delay(1000);
+// }
 
 /*
 -----------------
@@ -121,23 +138,165 @@ uint8_t address[6] = {0x66, 0x1e, 0x21, 0x00, 0xaa, 0xfe}; // Change this to ref
 
 String myName = "ESP32-BT-Master";
 
-void setup()
+void processOBD()
 {
+  static int state;
+  state = state % LAST;
 
+  switch (state)
+  {
+  case ENG_RPM:
+  {
+    rpm = myELM327.rpm();
+    if (myELM327.nb_rx_state == ELM_SUCCESS)
+    {
+      Serial.printf("rpm: %.0f", rpm);
+      tft.drawStringf(0, 0, buffer, "U/min: %.0f", rpm);
+      state++;
+    }
+    break;
+  }
+
+  case SPEED:
+  {
+    kph = myELM327.kph();
+    if (myELM327.nb_rx_state == ELM_SUCCESS)
+    {
+      Serial.printf("km/h: %.0f", kph);
+      tft.drawStringf(0, 15, buffer, "km/h: %.0f", kph);
+      state++;
+    }
+    break;
+  }
+  case ENG_LOAD:
+  {
+    load = myELM327.engineLoad();
+    if (myELM327.nb_rx_state == ELM_SUCCESS)
+    {
+      Serial.printf("load: %f", load);
+      tft.drawStringf(0, 30, buffer, "load: %.0f", load);
+      state++;
+    }
+    break;
+  }
+  }
+
+  if (myELM327.nb_rx_state != ELM_SUCCESS && myELM327.nb_rx_state != ELM_GETTING_MSG)
+  {
+    myELM327.printError();
+    tft.clear();
+    tft.drawStringf(0, 32, buffer, "ERROR: %d", myELM327.nb_rx_state);
+    state++;
+  }
+  tft.display();
+}
+OverkillSolarBms2 bms = OverkillSolarBms2();
+#define m_last_basic_info_query_rate 250
+#define m_last_cell_voltages_query_rate 1000
+BasicInfo bmsInfo;
+float CellVoltages[4];
+TaskHandle_t xBLETask, xOBDTask, xTFTTask;
+// bits are defined to represent each notification source
+#define BMS_BIT    0x01
+#define CELL_BIT    0x02
+
+void BmsTask(void *parameter)
+{
+  static uint32_t
+      m_last_basic_info_query_time = 0,
+      m_last_cell_voltages_query_time = 0;
+  BLEClient.begin(myName.c_str());
+
+  bms.begin(&BLEClient);
+
+  while (true)
+  {
+    if (BLEClient.connected())
+    {
+      log_d("BLEClient connected");
+      BLEClient.bleLoop();
+      bms.main_task(false);
+      uint32_t now = millis();
+      if (millis() - m_last_basic_info_query_time >= m_last_basic_info_query_rate)
+      {
+        bms.query_0x03_basic_info();
+        BasicInfo bmsInfo = bms.get_BasicInfo();
+        log_i("BMS Info: %.2fV %.2fA %.2fW",
+              bmsInfo.voltage / 1000.0, bmsInfo.current / 1000.0, bmsInfo.voltage / 1000.0 * bmsInfo.current / 1000.0);
+        xTaskNotify(xTFTTask, BMS_BIT, eSetBits);
+        m_last_basic_info_query_time = millis();
+      }
+      if (millis() - m_last_cell_voltages_query_time >= m_last_cell_voltages_query_rate)
+      {
+        bms.query_0x04_cell_voltages();
+        for (size_t i = 0; i < 4; i++)
+          CellVoltages[i] = bms.get_cell_voltage(i);
+        xTaskNotify(xTFTTask, CELL_BIT, eSetBits);
+        m_last_cell_voltages_query_time = millis();
+      }
+      vTaskDelay(pdMS_TO_TICKS(10));
+    }
+    else
+    {
+      log_e("BLEClient not connected");
+      vTaskDelay(pdMS_TO_TICKS(3000));
+    }
+  }
+}
+void TFTTask(void *parameter)
+{
+  BaseType_t xResult;
   tft.init();
   tft.flipScreenVertically();
   tft.setFont(ArialMT_Plain_10);
   tft.drawString(SCREEN_WIDTH / 2, SCREEN_HEIGHT / 2, "Booting");
   tft.display();
+xResult =  xTaskNotifyWait(0, 0, NULL, portMAX_DELAY);
+      if( xResult == pdPASS )
+      {
+         /* A notification was received.  See which bits were set. */
+         if( ( ulNotifiedValue & TX_BIT ) != 0 )
+         {
+            /* The TX ISR has set a bit. */
+            prvProcessTx();
+         }
+
+         if( ( ulNotifiedValue & RX_BIT ) != 0 )
+         {
+            /* The RX ISR has set a bit. */
+            prvProcessRx();
+         }
+      }
+      else
+      {
+         /* Did not receive a notification within the expected time. */
+         prvCheckForErrors();
+      }
+    tft.clear();
+  tft.drawString(0, 0, "Connected to ELM327");
+  tft.clear();
+}
+void setup()
+{
+
   DEBUG_PORT.begin(115200);
   Serial.println("booting");
 
+  xTaskCreatePinnedToCore(
+      BmsTask,         /* Function to implement the task */
+      "BLETask",       /* Name of the task */
+      1000,            /* Stack size in words */
+      NULL,            /* Task input parameter */
+      0,               /* Priority of the task */
+      &xBLETask,       /* Task handle. */
+      tskNO_AFFINITY); /* Core where the task should run */
+
   SerialBT.begin(myName, true);
 
-// #ifndef USE_NAME
+  // #ifndef USE_NAME
   SerialBT.setPin(pin);
   Serial.println("Using PIN");
-// #endif
+  // #endif
   bool connected;
 // connect(address) is fast (up to 10 secs max), connect(slaveName) is slow (up to 30 secs max) as it needs
 // to resolve slaveName to address first, but it allows to connect to different devices with the same name.
@@ -146,7 +305,7 @@ void setup()
   connected = SerialBT.connect(slaveName);
   Serial.printf("Connecting to slave BT device named \"%s\"\n", slaveName.c_str());
 #else
-  connected = SerialBT.connect(address,0,ESP_SPP_SEC_NONE,ESP_SPP_ROLE_MASTER);
+  connected = SerialBT.connect(address, 0, ESP_SPP_SEC_NONE, ESP_SPP_ROLE_MASTER);
   Serial.print("Connecting to slave BT device with MAC ");
   Serial.println(MACadd);
 #endif
@@ -253,67 +412,11 @@ void setup()
   }
 
   Serial.println("Connected to ELM327");
-  tft.clear();
-  tft.drawString(0, 0, "Connected to ELM327");
-  tft.clear();
+
 }
 
 void loop()
 {
   processOBD();
   keycommands();
-}
-
-
-void processOBD()
-{
-  static int state;
-  state = state % LAST;
-
-  switch (state)
-  {
-  case ENG_RPM:
-  {
-    rpm = myELM327.rpm();
-    if (myELM327.nb_rx_state == ELM_SUCCESS)
-    {
-      Serial.printf("rpm: %.0f", rpm);
-      tft.drawStringf(0, 0, buffer, "U/min: %.0f", rpm);
-      state++;
-    }
-    break;
-  }
-
-  case SPEED:
-  {
-    kph = myELM327.kph();
-    if (myELM327.nb_rx_state == ELM_SUCCESS)
-    {
-      Serial.printf("km/h: %.0f", kph);
-      tft.drawStringf(0, 15, buffer, "km/h: %.0f", kph);
-      state++;
-    }
-    break;
-  }
-  case ENG_LOAD:
-  {
-    load = myELM327.engineLoad();
-    if (myELM327.nb_rx_state == ELM_SUCCESS)
-    {
-      Serial.printf("load: %f", load);
-      tft.drawStringf(0, 30, buffer, "load: %.0f", load);
-      state++;
-    }
-    break;
-  }
-  }
-
-  if (myELM327.nb_rx_state != ELM_SUCCESS && myELM327.nb_rx_state != ELM_GETTING_MSG)
-  {
-    myELM327.printError();
-    tft.clear();
-    tft.drawStringf(0, 32, buffer, "ERROR: %d", myELM327.nb_rx_state);
-    state++;
-  }
-  tft.display();
 }
