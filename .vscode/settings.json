@@ -1,0 +1,7 @@
+{
+    "files.associations": {
+        "*.tmpl": "helm",
+        "*.tcc": "cpp",
+        "cstdio": "cpp"
+    }
+}

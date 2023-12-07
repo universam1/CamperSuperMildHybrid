@@ -277,6 +277,7 @@ void vTFT_Task(void *parameter)
   tft.drawString(SCREEN_WIDTH / 2, SCREEN_HEIGHT / 2, "Booting");
   tft.display();
   uint32_t ulNotifiedValue;
+  char buffer[32];
 
   if (xTaskNotifyWait(pdFALSE, ULONG_MAX, &ulNotifiedValue, xMaxBlockTime) == pdPASS)
   {
@@ -284,41 +285,46 @@ void vTFT_Task(void *parameter)
     {
       log_i("BMS init received");
       tft.clear();
-      tft.setFont(ArialMT_Plain_16);
+      tft.setFont(ArialMT_Plain_24);
       tft.drawString(32, 0, "BMS Connected");
       tft.display();
-    }
-
-    if (ulNotifiedValue & NotificationBits::BMS_UPDATE_BIT)
-    {
-      log_i("BMS update received");
-      tft.clear();
-      tft.setFont(ArialMT_Plain_16);
-      tft.drawString(32, 0, "BMS Connected");
-      tft.drawString(0, 16, "Voltage: " + String(bmsInfo.voltage / 1000.0) + "V");
-      tft.drawString(0, 32, "Current: " + String(bmsInfo.current / 1000.0) + "A");
-      tft.drawString(0, 48, "Power: " + String(bmsInfo.voltage / 1000.0 * bmsInfo.current / 1000.0) + "W");
-      tft.display();
-    }
-    if (ulNotifiedValue & NotificationBits::CELL_UPDATE_BIT)
-    {
-      log_i("Cell update received");
-      tft.clear();
-      tft.setFont(ArialMT_Plain_16);
-      tft.drawString(32, 0, "BMS Connected");
-      tft.drawString(0, 16, "Cell 1: " + String(CellVoltages[0] / 1000.0) + "V");
-      tft.drawString(0, 32, "Cell 2: " + String(CellVoltages[1] / 1000.0) + "V");
-      tft.drawString(0, 48, "Cell 3: " + String(CellVoltages[2] / 1000.0) + "V");
-      tft.drawString(0, 64, "Cell 4: " + String(CellVoltages[3] / 1000.0) + "V");
-      tft.display();
+      vTaskDelay(pdMS_TO_TICKS(500));
     }
 
     if (ulNotifiedValue & NotificationBits::OBD_INIT_BIT)
     {
       log_i("OBD init received");
       tft.clear();
+      tft.setFont(ArialMT_Plain_24);
+      tft.drawString(32, 0, "ELM327 ok");
+      tft.display();
+      vTaskDelay(pdMS_TO_TICKS(500));
+    }
+
+    if (ulNotifiedValue & NotificationBits::BMS_UPDATE_BIT)
+    {
+      log_i("BMS update received");
+      tft.clear();
+      tft.setFont(ArialMT_Plain_10);
+      tft.drawStringf(0, 16, buffer, "%2.1fV", (bmsInfo.voltage / 1000.0));
+      tft.drawStringf(0, 32, buffer, "%4.*fA", (abs(bmsInfo.current) < 10000 ? 1 : 0), bmsInfo.current / 1000.0);
+      float p = bmsInfo.voltage / 1000.0 * bmsInfo.current / 1000.0;
+      tft.drawStringf(0, 48, buffer, "%4.*fW", (abs(p) < 10.0 ? 1 : 0), p);
+      tft.display();
+    }
+    if (ulNotifiedValue & NotificationBits::CELL_UPDATE_BIT)
+    {
+      log_i("Cell update received");
+      float minC = CellVoltages[0], maxC = CellVoltages[0];
+      for (size_t i = 1; i < 4; i++)
+      {
+        minC = min(minC, CellVoltages[i]);
+        maxC = max(maxC, CellVoltages[i]);
+      }
+
+      tft.clear();
       tft.setFont(ArialMT_Plain_16);
-      tft.drawString(32, 0, "Connected to ELM327");
+      tft.drawStringf(0, 16, buffer, "Cell Δ: %.0fmV", (maxC - minC) * 1000.0);
       tft.display();
     }
 
@@ -351,32 +357,30 @@ void setup()
   Serial.println("booting");
 
   xTaskCreatePinnedToCore(
-      vTFT_Task,         /* Function to implement the task */
-      "TFT",            /* Name of the task */
+      vTFT_Task,       /* Function to implement the task */
+      "TFT",           /* Name of the task */
       1000,            /* Stack size in words */
       NULL,            /* Task input parameter */
-      10,               /* Priority of the task */
-      &vTFT_Task_hdl,       /* Task handle. */
+      10,              /* Priority of the task */
+      &vTFT_Task_hdl,  /* Task handle. */
       tskNO_AFFINITY); /* Core where the task should run */
 
-
   xTaskCreatePinnedToCore(
-      vBMS_Task,         /* Function to implement the task */
-      "BMS",            /* Name of the task */
+      vBMS_Task,       /* Function to implement the task */
+      "BMS",           /* Name of the task */
       1000,            /* Stack size in words */
       NULL,            /* Task input parameter */
       5,               /* Priority of the task */
-      &vBMS_Task_hdl,       /* Task handle. */
+      &vBMS_Task_hdl,  /* Task handle. */
       tskNO_AFFINITY); /* Core where the task should run */
 
-
   xTaskCreatePinnedToCore(
-      vOBD_Task,         /* Function to implement the task */
-      "OBD",            /* Name of the task */
+      vOBD_Task,       /* Function to implement the task */
+      "OBD",           /* Name of the task */
       1000,            /* Stack size in words */
       NULL,            /* Task input parameter */
       3,               /* Priority of the task */
-      &vOBD_Task_hdl,       /* Task handle. */
+      &vOBD_Task_hdl,  /* Task handle. */
       tskNO_AFFINITY); /* Core where the task should run */
 
   // // Disconnect() may take up to 10 secs max
@@ -457,7 +461,6 @@ void setup()
   //   sleep(1000);
   //   ESP.restart();
   // }
-
 }
 
 void loop()
