@@ -3,19 +3,24 @@
 #include "ELMduino.h"
 #include "BleSerialClient.h"
 #include <Wire.h>
-#include "SSD1306Wire.h"
+// #include "SSD1306Wire.h"
+#include <Adafruit_GFX.h>
+#include <Adafruit_SSD1306.h>
 #include <bms2.h>
 
 #define SIMULATE_BMS
 #define SIMULATE_OBD
 
-SSD1306Wire tft(0x3c, 5, 4);
 #define SCREEN_WIDTH 128
 #define SCREEN_HEIGHT 64
+#define OLED_RESET -1 // SSD1306 doesn't have a reset pin
+#define SCREEN_ADDRESS 0x3c
+#define OLED_SDA 5
+#define OLED_SCL 4
+// SSD1306Wire tft(0x3c, 5, 4);
+Adafruit_SSD1306 tft(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire);
 
 BluetoothSerial SerialBT;
-// #define ELM_PORT SerialBT
-#define DEBUG_PORT Serial
 
 ELM327 myELM327;
 typedef enum
@@ -246,44 +251,60 @@ void vBMS_Task(void *parameter)
   static uint32_t
       m_last_basic_info_query_time = 0,
       m_last_cell_voltages_query_time = 0;
+#ifndef SIMULATE_BMS
   BLEClient.begin(myName.c_str());
-
   bms.begin(&BLEClient);
+#endif
 
   while (true)
   {
+#ifndef SIMULATE_BMS
     if (BLEClient.connected())
     {
       log_d("BLEClient connected");
       BLEClient.bleLoop();
       bms.main_task(false);
-      uint32_t now = millis();
-
+#else
+    {
+#endif
       if (millis() - m_last_basic_info_query_time >= m_last_basic_info_query_rate)
       {
+#ifndef SIMULATE_BMS
         bms.query_0x03_basic_info();
-        BasicInfo bmsInfo = bms.get_BasicInfo();
-        log_i("BMS Info: %.2fV %.2fA %.2fW",
-              bmsInfo.voltage / 1000.0, bmsInfo.current / 1000.0, bmsInfo.voltage / 1000.0 * bmsInfo.current / 1000.0);
+        bmsInfo = bms.get_BasicInfo();
+#else
+        bmsInfo.voltage = random(13000, 14000);
+        bmsInfo.current = random(-180000, 60000);
+#endif
+        log_d("BMS Info: %.2fV %.2fA %.2fW",            
+          bmsInfo.voltage / 1000.0, bmsInfo.current / 1000.0, bmsInfo.voltage / 1000.0 * bmsInfo.current / 1000.0);
         xTaskNotify(vTFT_Task_hdl, NotificationBits::BMS_UPDATE_BIT, eSetBits);
         m_last_basic_info_query_time = millis();
       }
 
       if (millis() - m_last_cell_voltages_query_time >= m_last_cell_voltages_query_rate)
       {
+#ifndef SIMULATE_BMS
         bms.query_0x04_cell_voltages();
+#endif
         for (size_t i = 0; i < 4; i++)
+#ifndef SIMULATE_BMS
           CellVoltages[i] = bms.get_cell_voltage(i);
+#else
+          CellVoltages[i] = random(3100, 3300) / 1000.0;
+#endif
         xTaskNotify(vTFT_Task_hdl, NotificationBits::CELL_UPDATE_BIT, eSetBits);
         m_last_cell_voltages_query_time = millis();
       }
       vTaskDelay(pdMS_TO_TICKS(10));
     }
+#ifndef SIMULATE_BMS
     else
     {
       log_e("BLEClient not connected");
       vTaskDelay(pdMS_TO_TICKS(3000));
     }
+#endif
   }
 }
 const TickType_t xMaxBlockTime = pdMS_TO_TICKS(2000);
@@ -291,48 +312,66 @@ const TickType_t xMaxBlockTime = pdMS_TO_TICKS(2000);
 void vTFT_Task(void *parameter)
 {
   BaseType_t xResult;
-  char buffer[16];
-  // Wire.begin(5, 4);
-  tft.init();
-  tft.flipScreenVertically();
-  tft.setFont(ArialMT_Plain_24);
-  tft.drawStringf(0, SCREEN_HEIGHT / 2,buffer, "Boot: %d", __COUNTER__);
+  // char buffer[16];
+  Wire.begin(5, 4);
+  // tft.init();
+  if (!tft.begin(SSD1306_SWITCHCAPVCC, SCREEN_ADDRESS))
+  {
+    Serial.println(F("SSD1306 allocation failed"));
+    vTaskDelay(pdMS_TO_TICKS(1000));
+    ESP.restart();
+  }
+  tft.setTextColor(SSD1306_WHITE, SSD1306_BLACK);
+  tft.setTextWrap(false);
+  tft.clearDisplay();
+  tft.setTextSize(2);
+  tft.printf("Boot: %d", __COUNTER__);
   tft.display();
   uint32_t ulNotifiedValue;
   while (true)
   {
+    tft.setTextSize(1);
     if (xTaskNotifyWait(pdFALSE, ULONG_MAX, &ulNotifiedValue, xMaxBlockTime) == pdPASS)
     {
       if (ulNotifiedValue & NotificationBits::BMS_INIT_BIT)
       {
         log_i("BMS init received");
-        tft.clear();
-        tft.setFont(ArialMT_Plain_24);
-        tft.drawString(32, 0, "BMS Connected");
+        // tft.setTextSize(2);
+        tft.setCursor(0, 20);
+        tft.print("BMS ok");
         tft.display();
-        vTaskDelay(pdMS_TO_TICKS(500));
+        vTaskDelay(pdMS_TO_TICKS(300));
+        // tft.setTextSize(1);
+        tft.clearDisplay();
       }
 
       if (ulNotifiedValue & NotificationBits::OBD_INIT_BIT)
       {
         log_i("OBD init received");
-        tft.clear();
-        tft.setFont(ArialMT_Plain_24);
-        tft.drawString(32, 0, "ELM327 ok");
+        // tft.setTextSize(2);
+        tft.setCursor(0, 50);
+        tft.print("ELM327 ok");
         tft.display();
-        vTaskDelay(pdMS_TO_TICKS(500));
+        vTaskDelay(pdMS_TO_TICKS(300));
+        // tft.setTextSize(1);
+        tft.clearDisplay();
       }
 
       if (ulNotifiedValue & NotificationBits::BMS_UPDATE_BIT)
       {
         log_i("BMS update received");
-        tft.clear();
-        tft.setFont(ArialMT_Plain_10);
-        tft.drawStringf(0, 16, buffer, "%2.1fV", (bmsInfo.voltage / 1000.0));
-        tft.drawStringf(0, 32, buffer, "%4.*fA", (abs(bmsInfo.current) < 10000 ? 1 : 0), bmsInfo.current / 1000.0);
+        tft.setTextSize(2);
+        tft.setCursor(65, 0);
+        tft.printf("%2.1fV", (bmsInfo.voltage / 1000.0));
+
+        tft.setCursor(65, 25);
+        tft.printf("%4.*fA", (abs(bmsInfo.current) < 10000 ? 1 : 0), bmsInfo.current / 1000.0);
+
+        tft.setCursor(55, 50);
         float p = bmsInfo.voltage / 1000.0 * bmsInfo.current / 1000.0;
-        tft.drawStringf(0, 48, buffer, "%4.*fW", (abs(p) < 10.0 ? 1 : 0), p);
+        tft.printf("%5.*fW", (abs(p) < 10.0 ? 1 : 0), p);
         tft.display();
+        tft.setTextSize(1);
       }
       if (ulNotifiedValue & NotificationBits::CELL_UPDATE_BIT)
       {
@@ -344,31 +383,32 @@ void vTFT_Task(void *parameter)
           maxC = max(maxC, CellVoltages[i]);
         }
 
-        tft.clear();
-        tft.setFont(ArialMT_Plain_16);
-        tft.drawStringf(0, 16, buffer, "Cell Δ: %.0fmV", (maxC - minC) * 1000.0);
+        tft.setTextSize(1);
+        tft.setCursor(0, 50);
+        tft.printf("~%3.0fmV", (maxC - minC) * 1000.0);
         tft.display();
       }
 
       if (ulNotifiedValue & NotificationBits::OBD_UPDATE_BIT)
       {
         log_i("OBD update received");
-        obdData.coasting ? tft.invertDisplay() : tft.normalDisplay();
-        tft.clear();
-        tft.setFont(ArialMT_Plain_16);
-        tft.drawString(0, 16, "RPM: " + String(obdData.rpm));
-        tft.drawString(0, 32, "Speed: " + String(obdData.speed));
-        tft.drawString(0, 48, "Load: " + String(obdData.load));
-        tft.drawString(0, 64, "Coasting: " + String(obdData.coasting));
+        tft.invertDisplay(obdData.load < 20);
+        tft.setCursor(0, 0);
+        tft.printf("%4dUmin", obdData.rpm);
+        
+        tft.setCursor(0, 15);
+        tft.setTextSize(2);
+        tft.printf("%3d%%", obdData.load);
         tft.display();
+        tft.setTextSize(1);
       }
     }
     else
     {
       log_e("Did not receive a notification within the expected time.");
-      tft.clear();
-      tft.setFont(ArialMT_Plain_24);
-      tft.drawString(0, SCREEN_HEIGHT / 2, "Offline");
+      tft.clearDisplay();
+      tft.setCursor(0, SCREEN_HEIGHT / 2);
+      tft.print("Offline");
       tft.display();
     }
   }
@@ -376,11 +416,11 @@ void vTFT_Task(void *parameter)
 void setup()
 {
 
-  DEBUG_PORT.begin(115200);
+  Serial.begin(115200);
   Serial.printf("booting %d", __COUNTER__);
 
   xTaskCreatePinnedToCore(vTFT_Task, "TFT", 10000, NULL, 10, &vTFT_Task_hdl, 1);
-  // xTaskCreatePinnedToCore(vBMS_Task, "BMS", 1000, NULL, 5, &vBMS_Task_hdl, tskNO_AFFINITY);
+  xTaskCreatePinnedToCore(vBMS_Task, "BMS", 10000, NULL, 5, &vBMS_Task_hdl, 0);
   xTaskCreatePinnedToCore(vOBD_Task, "OBD", 10000, NULL, 3, &vOBD_Task_hdl, 0);
 
   // // Disconnect() may take up to 10 secs max
