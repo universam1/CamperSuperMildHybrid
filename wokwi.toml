@@ -1,0 +1,4 @@
+[wokwi]
+version = 1
+elf = ".pio/build/smarthybrid/firmware.elf"
+firmware = ".pio/build/smarthybrid/firmware.bin"
