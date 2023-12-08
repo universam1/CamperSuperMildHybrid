@@ -133,6 +133,8 @@ OBDdata_t obdData;
 
 void vOBD_Task(void *parameter)
 {
+  log_d("vOBD_Task: %d", xPortGetCoreID());
+
   static int state;
 
 #ifndef SIMULATE_OBD
@@ -248,6 +250,8 @@ void vOBD_Task(void *parameter)
 
 void vBMS_Task(void *parameter)
 {
+  log_d("vBMS_Task: %d", xPortGetCoreID());
+
   static uint32_t
       m_last_basic_info_query_time = 0,
       m_last_cell_voltages_query_time = 0;
@@ -276,8 +280,8 @@ void vBMS_Task(void *parameter)
         bmsInfo.voltage = random(13000, 14000);
         bmsInfo.current = random(-180000, 60000);
 #endif
-        log_d("BMS Info: %.2fV %.2fA %.2fW",            
-          bmsInfo.voltage / 1000.0, bmsInfo.current / 1000.0, bmsInfo.voltage / 1000.0 * bmsInfo.current / 1000.0);
+        log_d("BMS Info: %.2fV %.2fA %.2fW",
+              bmsInfo.voltage / 1000.0, bmsInfo.current / 1000.0, bmsInfo.voltage / 1000.0 * bmsInfo.current / 1000.0);
         xTaskNotify(vTFT_Task_hdl, NotificationBits::BMS_UPDATE_BIT, eSetBits);
         m_last_basic_info_query_time = millis();
       }
@@ -307,10 +311,20 @@ void vBMS_Task(void *parameter)
 #endif
   }
 }
+
+void drawProgressbar(int x, int y, int width, int height, int progress)
+{
+  progress = constrain(progress, 0, 100);
+  float bar = ((float)(width - 1) / 100) * progress;
+  tft.drawRect(x, y, width, height, WHITE);
+  tft.fillRect(x + 2, y + 2, width - 4, height - 4, BLACK);
+  tft.fillRect(x + 2, y + 2, bar, height - 4, WHITE);
+}
 const TickType_t xMaxBlockTime = pdMS_TO_TICKS(2000);
 
 void vTFT_Task(void *parameter)
 {
+  log_d("vTFT_Task: %d", xPortGetCoreID());
   BaseType_t xResult;
   // char buffer[16];
   Wire.begin(5, 4);
@@ -361,15 +375,18 @@ void vTFT_Task(void *parameter)
       {
         log_i("BMS update received");
         tft.setTextSize(2);
-        tft.setCursor(65, 0);
+        tft.setCursor(70, 0);
         tft.printf("%2.1fV", (bmsInfo.voltage / 1000.0));
 
-        tft.setCursor(65, 25);
+        tft.setCursor(70, 20);
         tft.printf("%4.*fA", (abs(bmsInfo.current) < 10000 ? 1 : 0), bmsInfo.current / 1000.0);
 
-        tft.setCursor(55, 50);
+        tft.setCursor(118, 50);
+        tft.print("W");
         float p = bmsInfo.voltage / 1000.0 * bmsInfo.current / 1000.0;
-        tft.printf("%5.*fW", (abs(p) < 10.0 ? 1 : 0), p);
+        tft.setTextSize(3);
+        tft.setCursor(28, 43);
+        tft.printf("%5.*f", (abs(p) < 10.0 ? 1 : 0), p);
         tft.display();
         tft.setTextSize(1);
       }
@@ -384,8 +401,8 @@ void vTFT_Task(void *parameter)
         }
 
         tft.setTextSize(1);
-        tft.setCursor(0, 50);
-        tft.printf("~%3.0fmV", (maxC - minC) * 1000.0);
+        tft.setCursor(0, 55);
+        tft.printf("~%2.0fmV", (maxC - minC) * 1000.0);
         tft.display();
       }
 
@@ -395,10 +412,11 @@ void vTFT_Task(void *parameter)
         tft.invertDisplay(obdData.load < 20);
         tft.setCursor(0, 0);
         tft.printf("%4dUmin", obdData.rpm);
-        
+
         tft.setCursor(0, 15);
-        tft.setTextSize(2);
+        tft.setTextSize(1);
         tft.printf("%3d%%", obdData.load);
+        drawProgressbar(0, 25, 60, 8, obdData.load);
         tft.display();
         tft.setTextSize(1);
       }
@@ -419,9 +437,9 @@ void setup()
   Serial.begin(115200);
   Serial.printf("booting %d", __COUNTER__);
 
-  xTaskCreatePinnedToCore(vTFT_Task, "TFT", 10000, NULL, 10, &vTFT_Task_hdl, 1);
-  xTaskCreatePinnedToCore(vBMS_Task, "BMS", 10000, NULL, 5, &vBMS_Task_hdl, 0);
-  xTaskCreatePinnedToCore(vOBD_Task, "OBD", 10000, NULL, 3, &vOBD_Task_hdl, 0);
+  xTaskCreatePinnedToCore(vTFT_Task, "TFT", 5000, NULL, 2, &vTFT_Task_hdl, tskNO_AFFINITY);
+  xTaskCreatePinnedToCore(vBMS_Task, "BMS", 5000, NULL, 3, &vBMS_Task_hdl, tskNO_AFFINITY);
+  xTaskCreatePinnedToCore(vOBD_Task, "OBD", 5000, NULL, 4, &vOBD_Task_hdl, tskNO_AFFINITY);
 
   // // Disconnect() may take up to 10 secs max
   // if (SerialBT.disconnect())
@@ -501,9 +519,10 @@ void setup()
   //   sleep(1000);
   //   ESP.restart();
   // }
+  vTaskDelete(NULL);
 }
 
 void loop()
 {
-  // keycommands();
+  vTaskDelete(NULL);
 }
