@@ -58,12 +58,12 @@ uint8_t txValue = 0;
 // #define SERVICE_UUID           "6E400001-B5A3-F393-E0A9-E50E24DCCA9E" // UART service UUID
 // #define CHARACTERISTIC_UUID_RX "6E400002-B5A3-F393-E0A9-E50E24DCCA9E"
 // #define CHARACTERISTIC_UUID_TX "6E400003-B5A3-F393-E0A9-E50E24DCCA9E"
-const char *BLE_SERIAL_SERVICE_UUID = "ff00";
-const char *BLE_RX_UUID = "ff01";
-const char *BLE_TX_UUID = "ff02";
-BLEUUID serviceUUID;
-BLEUUID charRxUUID;
-BLEUUID charTxUUID;
+// const char *BLE_SERIAL_SERVICE_UUID = "ff00";
+// const char *BLE_RX_UUID = "ff01";
+// const char *BLE_TX_UUID = "ff02";
+// BLEUUID serviceUUID;
+// BLEUUID charRxUUID;
+// BLEUUID charTxUUID;
 
 class MyServerCallbacks : public BLEServerCallbacks
 {
@@ -96,50 +96,55 @@ class MyCallbacks : public BLECharacteristicCallbacks
         }
     }
 };
-// static BLEUUID serviceUUID("0000ff00-0000-1000-8000-00805f9b34fb");             //xiaoxiang bms original module
-// static BLEUUID charUUID_tx("0000ff02-0000-1000-8000-00805f9b34fb");             //xiaoxiang bms original module
-// static BLEUUID charUUID_rx("0000ff01-0000-1000-8000-00805f9b34fb");             //xiaoxiang bms original module
+static BLEUUID serviceUUID("0000ff00-0000-1000-8000-00805f9b34fb"); // xiaoxiang bms original module
+static BLEUUID charUUID_rx("0000ff01-0000-1000-8000-00805f9b34fb"); // xiaoxiang bms original module
+static BLEUUID charUUID_tx("0000ff02-0000-1000-8000-00805f9b34fb"); // xiaoxiang bms original module
 void setup()
 {
     Serial.begin(115200);
-    serviceUUID = BLEUUID().fromString(BLE_SERIAL_SERVICE_UUID);
-    charRxUUID = BLEUUID().fromString(BLE_RX_UUID);
-    charTxUUID = BLEUUID().fromString(BLE_TX_UUID);
-    auto t = serviceUUID.toString();
-    Serial.println(t.c_str());
-    Serial.println(charRxUUID.toString().c_str());
-    Serial.println(charTxUUID.toString().c_str());
+    // serviceUUID = BLEUUID().fromString(BLE_SERIAL_SERVICE_UUID);
+    // charRxUUID = BLEUUID().fromString(BLE_RX_UUID);
+    // charTxUUID = BLEUUID().fromString(BLE_TX_UUID);
+    // auto t = serviceUUID.toString();
+    // Serial.println(t.c_str());
+    // Serial.println(charRxUUID.toString().c_str());
+    // Serial.println(charTxUUID.toString().c_str());
     // Create the BLE Device
     BLEDevice::init("BMS Clone");
-
     // Create the BLE Server
     pServer = BLEDevice::createServer();
     pServer->setCallbacks(new MyServerCallbacks());
 
     // Create the BLE Service
     BLEService *pService = pServer->createService(serviceUUID);
+    BLEDescriptor *p2901Descriptor = new BLEDescriptor((uint16_t)0x2901); // Characteristic User Description
+
     // Create a BLE Characteristic
     BLECharacteristic *pRxCharacteristic = pService->createCharacteristic(
-        charRxUUID,
-        BLECharacteristic::PROPERTY_NOTIFY|BLECharacteristic::PROPERTY_READ);
-
+        charUUID_rx, BLECharacteristic::PROPERTY_NOTIFY | BLECharacteristic::PROPERTY_READ);
     pRxCharacteristic->setCallbacks(new MyCallbacks());
     pRxCharacteristic->addDescriptor(new BLE2902());
-      BLEDescriptor *pDescriptor3 = new BLEDescriptor((uint16_t)0x2901); // Characteristic User Description
-    pRxCharacteristic->addDescriptor(pDescriptor3);
+    pRxCharacteristic->addDescriptor(p2901Descriptor);
 
     pTxCharacteristic = pService->createCharacteristic(
-        charTxUUID,
-        BLECharacteristic::PROPERTY_READ|BLECharacteristic::PROPERTY_WRITE_NR);
-
+        charUUID_tx, BLECharacteristic::PROPERTY_READ | BLECharacteristic::PROPERTY_WRITE_NR);
     pTxCharacteristic->addDescriptor(new BLE2902());
-
+    pTxCharacteristic->addDescriptor(p2901Descriptor);
 
     // Start the service
     pService->start();
 
     // Start advertising
-    pServer->getAdvertising()->start();
+    BLEAdvertising *pAdvertising = pServer->getAdvertising();
+    BLEAdvertisementData advertisementData;
+    // char sNameData[] = {0x00, 0xff, 0x28, 0x50};
+    // advertisementData.setShortName(std::string(sNameData, sizeof sNameData));
+
+    char manData[] = {0x6c, 0x97, 0xe6, 0x38, 0xc1, 0xa4};
+    advertisementData.setManufacturerData(std::string(manData, sizeof manData));
+    pAdvertising->setAdvertisementData(advertisementData);
+
+    pAdvertising->start();
     Serial.println("Waiting a client connection to notify...");
 }
 
