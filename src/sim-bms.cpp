@@ -36,7 +36,7 @@ class MyServerCallbacks : public BLEServerCallbacks
   {
     Serial.println("connection");
     deviceConnected = true;
-        log_i("Device connected");
+    log_i("Device connected");
     uint16_t bleID = pServer->getConnId();
     pServer->updatePeerMTU(bleID, 100);
     log_i("updateMTU to: %i", pServer->getPeerMTU(bleID));
@@ -73,7 +73,7 @@ uint8_t basicInfoResponse[] = {0xDD, 0xA5, 0x00, 0x1B, 0x13, 0x78, 0x00, 0x00, 0
 uint8_t cellInfoResponse[] = {0xDD, 0xA5, 0x00, 0x18, 0x10, 0x39, 0x10, 0x3A, 0x10, 0x38, 0x10, 0x3A, 0x10, 0x3C, 0x10, 0x39, 0x10, 0x37, 0x10, 0x39, 0x10, 0x3B, 0x10, 0x3F, 0x10, 0x36, 0x10, 0x3A, 0xFC, 0x74, 0x77};
 // DD A5 00 14 4C 48 2D 53 50 31 35 53 30 30 31 2D 50 31 33 53 2D 33 30 41 FB 39 77
 uint8_t deviceInfoResponse[] = {0xDD, 0xA5, 0x00, 0x14, 0x4C, 0x48, 0x2D, 0x53, 0x50, 0x31, 0x35, 0x53, 0x30, 0x30, 0x31, 0x2D, 0x50, 0x31, 0x33, 0x53, 0x2D, 0x33, 0x30, 0x41, 0xFB, 0x39, 0x77};
-uint8_t splitAt=17;
+uint8_t splitAt = 20;
 class MyRXCallbacks : public BLECharacteristicCallbacks
 {
   void onWrite(BLECharacteristic *pCharacteristic)
@@ -106,50 +106,52 @@ class MyRXCallbacks : public BLECharacteristicCallbacks
       return;
     }
 
-splitAt++;
-if (splitAt>21) splitAt=17;
-log_i("splitAt: %i", splitAt);
-
     if (memcmp(rxValue, basicInfoRequest, len) == 0)
     {
       Serial.println("basic info request");
 
       txChar->setValue(&basicInfoResponse[0], splitAt);
       txChar->notify();
-      delay(10);
-      txChar->setValue(&basicInfoResponse[splitAt], sizeof(basicInfoResponse));
+      log_i("splitAt 1: %i", splitAt);
+      delay(100);
+      while (pServer->getConnectedCount() == 0)
+      {
+        log_e("no connection");
+      }
+      log_i("connected: %d", pServer->getPeerDevices(true).size());
+
+      txChar->setValue(basicInfoResponse + splitAt, sizeof(basicInfoResponse) - splitAt);
       txChar->notify();
+      log_i("splitAt 2: %i", sizeof(basicInfoResponse) - splitAt);
     }
     else if (memcmp(rxValue, cellInfoRequest, len) == 0)
     {
       Serial.println("cell info request");
       txChar->setValue(&cellInfoResponse[0], splitAt);
       txChar->notify();
-      txChar->setValue(&cellInfoResponse[splitAt], sizeof(cellInfoResponse));
+      txChar->setValue(&cellInfoResponse[splitAt], sizeof(cellInfoResponse) - splitAt);
       txChar->notify();
-
     }
     else if (memcmp(rxValue, deviceInfoRequest, len) == 0)
     {
       Serial.println("device info request");
       txChar->setValue(&deviceInfoResponse[0], splitAt);
       txChar->notify();
-      txChar->setValue(&deviceInfoResponse[splitAt], sizeof(deviceInfoResponse));
+      txChar->setValue(&deviceInfoResponse[splitAt], sizeof(deviceInfoResponse) - splitAt);
       txChar->notify();
     }
-    else if (memcmp(rxValue, testRequest, len) == 0)
-    {
-      // pCharacteristic->setValue(rxValue, len);
-      // pCharacteristic->notify();
-      txChar->setValue(basicInfoResponse, sizeof(basicInfoResponse));
-      txChar->notify(false);
-    }
-
     else
     {
-      txChar->setValue(basicInfoResponse, *rxValue);
-      txChar->notify(false);
+
       Serial.println("unknown request");
+      splitAt = *rxValue;
+      txChar->setValue(basicInfoResponse, splitAt);
+      txChar->notify();
+      log_i("splitAt 1: %i", splitAt);
+      delay(10);
+      txChar->setValue(basicInfoResponse + splitAt, sizeof(basicInfoResponse) - splitAt);
+      txChar->notify();
+      log_i("splitAt 2: %i", sizeof(basicInfoResponse) - splitAt);
     }
   }
 };
