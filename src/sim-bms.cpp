@@ -21,10 +21,12 @@
 */
 #include <Arduino.h>
 
-#include <BLEDevice.h>
-#include <BLEServer.h>
-#include <BLEUtils.h>
-#include <BLE2902.h>
+// #include <BLEDevice.h>
+// #include <BLEServer.h>
+// #include <BLEUtils.h>
+// #include <BLE2902.h>
+#include "NimBLEDevice.h"
+#include "NimBLELog.h"
 
 BLEServer *pServer = NULL;
 BLECharacteristic *pTxCharacteristic = NULL;
@@ -34,12 +36,13 @@ class MyServerCallbacks : public BLEServerCallbacks
 {
   void onConnect(BLEServer *pServer)
   {
-    Serial.println("connection");
     deviceConnected = true;
     log_i("Device connected");
-    uint16_t bleID = pServer->getConnId();
-    pServer->updatePeerMTU(bleID, 100);
-    log_i("updateMTU to: %i", pServer->getPeerMTU(bleID));
+    // uint16_t bleID = pServer->getConnId();
+    // auto bleID = pServer->getPeerDevices()[0];
+    // // pServer->updatePeerMTU(bleID, 100);
+
+    // log_i("updateMTU to: %i", pServer->getPeerMTU(bleID));
   };
 
   void onDisconnect(BLEServer *pServer)
@@ -55,13 +58,16 @@ class MyServerCallbacks : public BLEServerCallbacks
 // 0000ff02-0000-1000-8000-00805f9b34fb
 // Write this characteristic to send data to BMS
 // READ, WRITE, WRITE NO RESPONSE
-static BLEUUID serviceUUID("0000ff00-0000-1000-8000-00805f9b34fb"); // xiaoxiang bms original module
-static BLEUUID charUUID_tx("0000ff01-0000-1000-8000-00805f9b34fb"); // xiaoxiang bms original module
-static BLEUUID charUUID_rx("0000ff02-0000-1000-8000-00805f9b34fb"); // xiaoxiang bms original module
+// static BLEUUID serviceUUID("0000ff00-0000-1000-8000-00805f9b34fb"); // xiaoxiang bms original module
+// static BLEUUID charUUID_tx("0000ff01-0000-1000-8000-00805f9b34fb"); // xiaoxiang bms original module
+// static BLEUUID charUUID_rx("0000ff02-0000-1000-8000-00805f9b34fb"); // xiaoxiang bms original module
 
-static BLEUUID faServiceUUID("0000fa01-0000-1000-8000-00805f9b34fb"); // xiaoxiang bms original module
-
-BLECharacteristic *m_pnpCharacteristic; // 0x2a50
+// static BLEUUID faServiceUUID("0000fa01-0000-1000-8000-00805f9b34fb"); // xiaoxiang bms original module
+#define serviceUUID "0000ff00-0000-1000-8000-00805f9b34fb"   // xiaoxiang bms original module
+#define charUUID_tx "0000ff01-0000-1000-8000-00805f9b34fb"   // xiaoxiang bms original module
+#define charUUID_rx "0000ff02-0000-1000-8000-00805f9b34fb"   // xiaoxiang bms original module
+#define faServiceUUID "0000fa01-0000-1000-8000-00805f9b34fb" // xiaoxiang bms original module
+BLECharacteristic *m_pnpCharacteristic;                      // 0x2a50
 
 const uint8_t basicInfoRequest[] = {0xDD, 0xA5, 0x03, 0x00, 0xFF, 0xFD, 0x77};
 const uint8_t cellInfoRequest[] = {0xDD, 0xA5, 0x04, 0x00, 0xFF, 0xFC, 0x77};
@@ -80,8 +86,9 @@ class MyRXCallbacks : public BLECharacteristicCallbacks
   {
 
     // std::string rxValue = pCharacteristic->getValue();
-    auto rxValue = pCharacteristic->getData();
-    auto len = pCharacteristic->getLength();
+    auto rxValue = pCharacteristic->getValue();
+    auto len = pCharacteristic->getDataLength();
+    // auto len = rxValue.size();
     if (len > 0)
     {
       Serial.println("*********");
@@ -118,7 +125,7 @@ class MyRXCallbacks : public BLECharacteristicCallbacks
       {
         log_e("no connection");
       }
-      log_i("connected: %d", pServer->getPeerDevices(true).size());
+      log_i("connected: %d", pServer->getPeerDevices().size());
 
       txChar->setValue(basicInfoResponse + splitAt, sizeof(basicInfoResponse) - splitAt);
       txChar->notify();
@@ -161,8 +168,8 @@ class MyTXCallbacks : public BLECharacteristicCallbacks
   void onWrite(BLECharacteristic *pCharacteristic)
   {
     // std::string rxValue = pCharacteristic->getValue();
-    auto rxValue = pCharacteristic->getData();
-    auto len = pCharacteristic->getLength();
+    auto rxValue = pCharacteristic->getValue();
+    auto len = pCharacteristic->getDataLength();
     if (len > 0)
     {
       Serial.println("*********");
@@ -193,47 +200,57 @@ void setup()
   // Serial.println(charTxUUID.toString().c_str());
   // Create the BLE Device
   BLEDevice::init("BMSClone");
-  BLEDevice::setMTU(100);
+  // BLEDevice::setMTU(100);
   // Create the BLE Server
   pServer = BLEDevice::createServer();
   pServer->setCallbacks(new MyServerCallbacks());
   /*
    * Here we create mandatory services described in bluetooth specification
    */
-  BLEService *m_deviceInfoService = pServer->createService(BLEUUID((uint16_t)0x180a));
+  // BLEService *m_deviceInfoService = pServer->createService(BLEUUID((uint16_t)0x180a));
 
   /*
    * Mandatory characteristic for device info service
    */
-  BLECharacteristic *m_pnpCharacteristic = m_deviceInfoService->createCharacteristic((uint16_t)0x2a50, BLECharacteristic::PROPERTY_READ);
+  // BLECharacteristic *m_pnpCharacteristic = m_deviceInfoService->createCharacteristic((uint16_t)0x2a50, NIMBLE_PROPERTY::READ);
   // uint8_t pnp[] = {sig, (uint8_t)(vid >> 8), (uint8_t)vid, (uint8_t)(pid >> 8), (uint8_t)pid, (uint8_t)(version >> 8), (uint8_t)version};
   // m_pnpCharacteristic->setValue(pnp, sizeof(pnp));
 
   // Create the BLE Service
   BLEService *pService = pServer->createService(BLEUUID((uint16_t)0xff00));
 
-  BLEDescriptor *p2901Descriptor = new BLEDescriptor(BLEUUID((uint16_t)0x2901)); // Characteristic User Description
-  p2901Descriptor->setValue("xiaoxiang bms");
-
   // 0000ff01-0000-1000-8000-00805f9b34fb
   // NOTIFY, READ
   // Notifications from this characteristic is received data from BMS
   pTxCharacteristic = pService->createCharacteristic(
       BLEUUID((uint16_t)0xff01),
-      BLECharacteristic::PROPERTY_NOTIFY | BLECharacteristic::PROPERTY_READ);
+      NIMBLE_PROPERTY::NOTIFY | NIMBLE_PROPERTY::READ);
   pTxCharacteristic->setCallbacks(new MyTXCallbacks());
-  pTxCharacteristic->addDescriptor(new BLE2902());
-  pTxCharacteristic->addDescriptor(p2901Descriptor);
+  // pTxCharacteristic->addDescriptor(new BLE2902());
+
+  // BLEDescriptor *p2901Descriptor = new BLEDescriptor(BLEUUID((uint16_t)0x2901)); // Characteristic User Description
+  // p2901Descriptor->setValue("xiaoxiang bms");
+
+  NimBLEDescriptor *pTx2901Descriptor = pTxCharacteristic->createDescriptor(
+      "2901",
+      NIMBLE_PROPERTY::READ);
+  // pTx2901Descriptor->setValue("Power");
+  pTxCharacteristic->addDescriptor(pTx2901Descriptor);
 
   // 0000ff02-0000-1000-8000-00805f9b34fb
   // Write this characteristic to send data to BMS
   // READ, WRITE, WRITE NO RESPONSE
   BLECharacteristic *pRxCharacteristic = pService->createCharacteristic(
       BLEUUID((uint16_t)0xff02),
-      BLECharacteristic::PROPERTY_READ | BLECharacteristic::PROPERTY_WRITE | BLECharacteristic::PROPERTY_WRITE_NR);
+      NIMBLE_PROPERTY::READ | NIMBLE_PROPERTY::WRITE | NIMBLE_PROPERTY::WRITE_NR);
   pRxCharacteristic->setCallbacks(new MyRXCallbacks());
   // pRxCharacteristic->addDescriptor(new BLE2902());
-  pRxCharacteristic->addDescriptor(p2901Descriptor);
+
+  NimBLEDescriptor *pRx2901Descriptor = pTxCharacteristic->createDescriptor(
+      "2901",
+      NIMBLE_PROPERTY::READ);
+  // pRx2901Descriptor->setValue("Power");
+  pRxCharacteristic->addDescriptor(pRx2901Descriptor);
 
   // Create the FA service
   BLEService *pFaService = pServer->createService(faServiceUUID);
@@ -241,29 +258,27 @@ void setup()
   // Create a BLE Characteristic
   BLECharacteristic *pFaCharacteristic = pFaService->createCharacteristic(
       BLEUUID((uint16_t)0xfa01),
-      BLECharacteristic::PROPERTY_NOTIFY | BLECharacteristic::PROPERTY_READ);
+      NIMBLE_PROPERTY::NOTIFY | NIMBLE_PROPERTY::READ);
   pFaCharacteristic->setCallbacks(new MyTXCallbacks());
-  pFaCharacteristic->addDescriptor(p2901Descriptor);
+  // pFaCharacteristic->addDescriptor(p2901Descriptor);
 
   // Start the service
   pService->start();
   pFaService->start();
 
   // Start advertising
+
+  // BLEAdvertisementData advertisementData;
+  // char manData[] = {0x6c, 0x97, 0xe6, 0x38, 0xc1, 0xa4};
+  // advertisementData.setManufacturerData(std::string(manData, sizeof manData));
   BLEAdvertising *pAdvertising = BLEDevice::getAdvertising();
-
-  BLEAdvertisementData advertisementData;
-  // char sNameData[] = {0x00, 0xff, 0x28, 0x50};
-  // advertisementData.setShortName(std::string(sNameData, sizeof sNameData));
-
-  char manData[] = {0x6c, 0x97, 0xe6, 0x38, 0xc1, 0xa4};
-  advertisementData.setManufacturerData(std::string(manData, sizeof manData));
-  pAdvertising->setAdvertisementData(advertisementData);
-  // pAdvertising->setScanResponse(true);
-  // pAdvertising->setMinPreferred(0x06);  // functions that help with iPhone connections issue
-  // pAdvertising->setMinPreferred(0x12);
+  // pAdvertising->setAdvertisementData(advertisementData);
   pAdvertising->addServiceUUID(serviceUUID);
+  pAdvertising->setScanResponse(true);
+  pAdvertising->setMinPreferred(0x06); // functions that help with iPhone connections issue
+  pAdvertising->setMaxPreferred(0x12);
   BLEDevice::startAdvertising();
+  // pAdvertising->start();
   Serial.println("Waiting a client connection to notify...");
 
   // pTxCharacteristic->setValue(basicInfoResponse, sizeof(basicInfoResponse));
