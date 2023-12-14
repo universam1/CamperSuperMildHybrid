@@ -1,6 +1,6 @@
 #include "smarthybrid.h"
 #include "BleSerialClient.h"
-#define SIMULATE_BMS
+// #define SIMULATE_BMS
 
 BleSerialClient BLEClient;
 
@@ -18,7 +18,7 @@ void vBMS_Task(void *parameter)
       m_last_basic_info_query_time = 0,
       m_last_cell_voltages_query_time = 0;
 #ifndef SIMULATE_BMS
-  BLEClient.begin(myName.c_str());
+  BLEClient.begin(myName);
   bms.begin(&BLEClient);
 #endif
   xTaskNotify(vTFT_Task_hdl, NotificationBits::BMS_INIT_BIT, eSetBits);
@@ -38,8 +38,8 @@ void vBMS_Task(void *parameter)
       {
 #ifndef SIMULATE_BMS
         bms.query_0x03_basic_info();
-        bmsInfo.voltage = bms.get_voltage();
-        bmsInfo.current = bms.get_current();
+        bmsInfo.Voltage = bms.get_voltage();
+        bmsInfo.Current = bms.get_current();
 #else
         bmsInfo.Voltage = random(12800, 14600) / 1000.0;
         bmsInfo.Current = random(-1800, 600) / 1000.0;
@@ -58,7 +58,7 @@ void vBMS_Task(void *parameter)
 #endif
         for (size_t i = 0; i < 4; i++)
 #ifndef SIMULATE_BMS
-          CellVoltages[i] = bms.get_cell_voltage(i);
+          bmsInfo.CellVoltages[i] = bms.get_cell_voltage(i);
 #else
           bmsInfo.CellVoltages[i] = random(3100, 3300) / 1000.0;
 #endif

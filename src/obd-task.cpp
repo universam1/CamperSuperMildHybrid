@@ -23,8 +23,6 @@ String MACadd = "66:1e:21:00:aa:fe";                       // This only for prin
 uint8_t address[6] = {0x66, 0x1e, 0x21, 0x00, 0xaa, 0xfe}; // Change this to reflect real MAC address of your slave BT device
 #endif
 
-String myName = "ESP32-BT-Master";
-
 OBDdata_t obdData;
 
 void vOBD_Task(void *parameter)

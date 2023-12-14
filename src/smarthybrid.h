@@ -6,13 +6,15 @@
 #include <Arduino.h>
 #include <bms2.h>
 
+#define myName "SmartHybrid"
+
 enum NotificationBits
 {
-    BMS_INIT_BIT = 1 << 0,
-    BMS_UPDATE_BIT = 1 << 1,
-    CELL_UPDATE_BIT = 1 << 2,
-    OBD_INIT_BIT = 1 << 3,
-    OBD_UPDATE_BIT = 1 << 4,
+  BMS_INIT_BIT = 1 << 0,
+  BMS_UPDATE_BIT = 1 << 1,
+  CELL_UPDATE_BIT = 1 << 2,
+  OBD_INIT_BIT = 1 << 3,
+  OBD_UPDATE_BIT = 1 << 4,
 };
 
 typedef enum
@@ -37,7 +39,8 @@ typedef struct BMSInfo_t
   float Voltage;
   float Current;
   float Power;
-float CellVoltages[4];
+  float CellVoltages[4];
+
 } BMSInfo_t;
 
 extern OBDdata_t obdData;
