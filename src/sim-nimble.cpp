@@ -49,21 +49,15 @@ const uint8_t cellInfoRequest[] = {0xDD, 0xA5, 0x04, 0x00, 0xFF, 0xFC, 0x77};
 const uint8_t deviceInfoRequest[] = {0xDD, 0xA5, 0x05, 0x00, 0xFF, 0xFB, 0x77};
 const uint8_t testRequest[] = {0x11};
 
-// DD-03-00-1B-05-1F-00-00-59-0F-59-10-00-00-2A-9A-00-00-00-00
-uint8_t basicInfoResponse1[] = {0xDD, 0x03, 0x00, 0x1B, 0x05, 0x1F, 0x00, 0x00, 0x59, 0x0F, 0x59, 0x10, 0x00, 0x00, 0x2A, 0x9A, 0x00, 0x00, 0x00, 0x00};
-// 00-00-21-64-03-04-02-0B-0C-0B-09-FD-73-77
-uint8_t basicInfoResponse2[] = {0x00, 0x00, 0x21, 0x64, 0x03, 0x04, 0x02, 0x0B, 0x0C, 0x0B, 0x09, 0xFD, 0x73, 0x77};
+uint8_t basicInfoResponse[] = {0xDD, 0x03, 0x00, 0x1B, 0x05, 0x1F, 0x00, 0x00, 0x59, 0x0F, 0x59, 0x10, 0x00, 0x00, 0x2A,
+                               0x9A, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x21, 0x64, 0x03, 0x04, 0x02, 0x0B, 0x0C, 0x0B,
+                               0x09, 0xFD, 0x73, 0x77};
 
-// DD-03-00-1B-05-1F-00-00-59-0F-59-10-00-00-2A-9A-00-00-00-00 00-00-21-64-03-04-02-0B-0C-0B-09-FD-73-77
-// uint8_t basicInfoResponse[] = {0xDD, 0x03, 0x00, 0x1B, 0x05, 0x1F, 0x00, 0x00, 0x59, 0x0F, 0x59, 0x10, 0x00, 0x00, 0x2A, 0x9A, 0x00, 0x00, 0x00, 0x00, 0x00, 0x21, 0x64, 0x03, 0x04, 0x02, 0x0B, 0x0C, 0x0B, 0x09, 0xFD, 0x73, 0x77};
+uint8_t cellInfoResponse[] = {0xDD, 0x04, 0x00, 0x1E, 0x0F, 0x66, 0x0F, 0x63, 0x0F, 0x63, 0x0F, 0x64, 0x0F, 0x3E, 0x0F, 0x63, 0x0F, 0x37, 0x0F, 0x5B, 0x0F, 0x65, 0x0F, 0x3B, 0x0F, 0x63, 0x0F, 0x63, 0x0F, 0x3C, 0x0F, 0x66, 0x0F, 0x3D, 0xF9, 0xF9, 0x77};
 
-// DD 04 00 1E 0F 66 0F 63 0F 63 0F 64 0F 3E 0F 63 0F 37 0F 5B 0F 65 0F 3B 0F 63 0F 63 0F 3C 0F 66 0F 3D F9 F9 77
-uint8_t cellInfoResponse[] = {0xDD,0x04,0x00,0x1E,0x0F,0x66,0x0F,0x63,0x0F,0x63,0x0F,0x64,0x0F,0x3E,0x0F,0x63,0x0F,0x37,0x0F,0x5B,0x0F,0x65,0x0F,0x3B,0x0F,0x63,0x0F,0x63,0x0F,0x3C,0x0F,0x66,0x0F,0x3D,0xF9,0xF9,0x77};
-
-// DD-05-00-19-4A-42-44-2D-53-50-30-34-53-30-32-38-2D-4C-34-53
-uint8_t deviceInfoResponse1[] = {0xDD, 0x05, 0x00, 0x19, 0x4A, 0x42, 0x44, 0x2D, 0x53, 0x50, 0x30, 0x34, 0x53, 0x30, 0x32, 0x38, 0x2D, 0x4C, 0x34, 0x53};
-// 2D-31-35-30-41-2D-42-2D-55-FA-01-77
-uint8_t deviceInfoResponse2[] = {0x2D, 0x31, 0x35, 0x30, 0x41, 0x2D, 0x42, 0x2D, 0x55, 0xFA, 0x01, 0x77};
+uint8_t deviceInfoResponse[] = {0xDD, 0x05, 0x00, 0x19, 0x4A, 0x42, 0x44, 0x2D, 0x53, 0x50, 0x30, 0x34, 0x53, 0x30, 0x32,
+                                0x38, 0x2D, 0x4C, 0x34, 0x53, 0x2D, 0x31, 0x35, 0x30, 0x41, 0x2D, 0x42, 0x2D, 0x55, 0xFA,
+                                0x01, 0x77};
 uint8_t splitAt = 20;
 
 // [D][uart_debug:114]: >>> DD:A5:04:00:FF:FC:77
@@ -76,26 +70,8 @@ class MyRXCallbacks : public BLECharacteristicCallbacks
   void onWrite(BLECharacteristic *pCharacteristic)
   {
 
-    // std::string rxValue = pCharacteristic->getValue();
     auto rxValue = pCharacteristic->getValue();
     auto len = pCharacteristic->getDataLength();
-    // auto len = rxValue.size();
-    if (len > 0)
-    {
-      Serial.println("*********");
-      Serial.print("Received RX: ");
-      // Serial.println(pCharacteristic->getUUID().toString().c_str());
-      // param->write.value;
-      for (int i = 0; i < len; i++)
-      {
-        Serial.print("0x");
-        Serial.print(rxValue[i] < 16 ? "0" : "");
-        Serial.print(rxValue[i], HEX);
-        Serial.print(" ");
-      }
-      Serial.println();
-      Serial.println("*********");
-    }
 
     BLECharacteristic *txChar = pServer->getServiceByUUID(serviceUUID)->getCharacteristic(charUUID_tx);
     if (txChar == NULL)
@@ -107,38 +83,49 @@ class MyRXCallbacks : public BLECharacteristicCallbacks
     if (memcmp(rxValue, basicInfoRequest, len) == 0)
     {
       Serial.println("basic info request");
-
-      txChar->setValue(basicInfoResponse1, sizeof(basicInfoResponse1));
-      txChar->notify();
-      // delay(10);
-      txChar->setValue(basicInfoResponse2, sizeof(basicInfoResponse2));
-      txChar->notify();
-      // txChar->setValue(basicInfoResponse, sizeof(basicInfoResponse));
-      // txChar->notify();
+      sendChunked(txChar, basicInfoResponse, sizeof(basicInfoResponse));
     }
     else if (memcmp(rxValue, cellInfoRequest, len) == 0)
     {
       Serial.println("cell info request");
-      txChar->setValue(cellInfoResponse, 20);
-      txChar->notify();
-      txChar->setValue(cellInfoResponse+20, sizeof(cellInfoResponse)-20);
-      txChar->notify();
+      sendChunked(txChar, cellInfoResponse, sizeof(cellInfoResponse));
     }
     else if (memcmp(rxValue, deviceInfoRequest, len) == 0)
     {
       Serial.println("device info request");
-      txChar->setValue(deviceInfoResponse1, sizeof(deviceInfoResponse1));
-      txChar->notify();
-      txChar->setValue(deviceInfoResponse2, sizeof(deviceInfoResponse2));
-      txChar->notify();
+      sendChunked(txChar, deviceInfoResponse, sizeof(deviceInfoResponse));
     }
     else
     {
 
-      Serial.println("unknown request");
-      txChar->setValue(basicInfoResponse1, sizeof(basicInfoResponse1));
+      if (len > 0)
+      {
+        Serial.println("********* unknown RX: ");
+
+        for (int i = 0; i < len; i++)
+        {
+          Serial.print(rxValue[i] < 16 ? "0" : "");
+          Serial.print(rxValue[i], HEX);
+          Serial.print(" ");
+        }
+        Serial.println("*********");
+      }
+    }
+  }
+  void sendChunked(BLECharacteristic *txChar, uint8_t *data, uint8_t len)
+  {
+    const uint8_t chunkSize = 20;
+    uint8_t chunks = len / chunkSize;
+    uint8_t lastChunkSize = len % chunkSize;
+    uint8_t i = 0;
+    for (i = 0; i < chunks; i++)
+    {
+      txChar->setValue(data + i * chunkSize, chunkSize);
       txChar->notify();
-      txChar->setValue(basicInfoResponse2, sizeof(basicInfoResponse2));
+    }
+    if (lastChunkSize > 0)
+    {
+      txChar->setValue(data + i * chunkSize, lastChunkSize);
       txChar->notify();
     }
   }
