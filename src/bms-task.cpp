@@ -19,6 +19,11 @@ void vBMS_Task(void *parameter)
       m_last_cell_voltages_query_time = 0;
 #ifndef SIMULATE_BMS
   BLEClient.begin(myName);
+  // if (  BLEClient.connectToServer()) {
+  //     log_d("BLEClient connected");
+  //   } else {
+  //     log_e("BLEClient not connected");
+  //   }
   bms.begin(&BLEClient);
 #endif
   xTaskNotify(vTFT_Task_hdl, NotificationBits::BMS_INIT_BIT, eSetBits);
@@ -26,18 +31,18 @@ void vBMS_Task(void *parameter)
   while (true)
   {
 #ifndef SIMULATE_BMS
+    BLEClient.bleLoop();
     if (BLEClient.connected())
     {
       log_d("BLEClient connected");
-      BLEClient.bleLoop();
-      bms.main_task(false);
+      bms.main_task(true);
 #else
     {
 #endif
       if (millis() - m_last_basic_info_query_time >= basic_info_query_rate)
       {
 #ifndef SIMULATE_BMS
-        bms.query_0x03_basic_info();
+        // bms.query_0x03_basic_info();
         bmsInfo.Voltage = bms.get_voltage();
         bmsInfo.Current = bms.get_current();
 #else
@@ -54,7 +59,7 @@ void vBMS_Task(void *parameter)
       if (millis() - m_last_cell_voltages_query_time >= cell_query_rate)
       {
 #ifndef SIMULATE_BMS
-        bms.query_0x04_cell_voltages();
+        // bms.query_0x04_cell_voltages();
 #endif
         for (size_t i = 0; i < 4; i++)
 #ifndef SIMULATE_BMS
@@ -65,7 +70,7 @@ void vBMS_Task(void *parameter)
         xTaskNotify(vTFT_Task_hdl, NotificationBits::CELL_UPDATE_BIT, eSetBits);
         m_last_cell_voltages_query_time = millis();
       }
-      vTaskDelay(pdMS_TO_TICKS(50));
+      vTaskDelay(pdMS_TO_TICKS(10));
     }
 #ifndef SIMULATE_BMS
     else
@@ -75,5 +80,6 @@ void vBMS_Task(void *parameter)
     }
 #endif
   }
+
   vTaskDelete(NULL);
 }

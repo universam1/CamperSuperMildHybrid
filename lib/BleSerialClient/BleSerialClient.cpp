@@ -1,6 +1,6 @@
 #include "BleSerialClient.h"
 using namespace std;
-
+#define DEBUG
 ByteRingBuffer<RX_BUFFER_SIZE> BleSerialClient::receiveBuffer;
 
 static void notifyCallback(
