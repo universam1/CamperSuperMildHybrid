@@ -3,6 +3,7 @@
         "*.tmpl": "helm",
         "*.tcc": "cpp",
         "cstdio": "cpp",
-        "new": "cpp"
+        "new": "cpp",
+        "*.tpp": "cpp"
     }
 }
