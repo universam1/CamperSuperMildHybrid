@@ -24,6 +24,27 @@ typedef struct
 
 } packBasicInfoStruct;
 
+
+// 0x03 Basic Info
+typedef struct BasicInfo {
+    float voltage;  // The total voltage, stored as units of 10 mV
+    float  current;  // The total current, stored in units 10mA
+    float balance_capacity;
+    float rate_capacity;
+    uint16_t cycle_count;
+    uint16_t production_date;
+    uint32_t balance_status;  // The cell balance statuses, stored as a bitfield
+    uint16_t protection_status;
+    uint8_t  software_version;
+    uint8_t  remaining_soc;
+    uint8_t  mosfet_status;
+    uint8_t  num_cells;
+    uint8_t  num_ntcs;
+    float ntc_temps[BMS_MAX_NTCs];
+} BasicInfo;
+
+
+
 typedef struct
 {
     uint8_t NumOfCells;
@@ -237,7 +258,7 @@ bool bmsProcessPacket(byte *packet)
 
 #include <CircularBuffer.h>
 
-CircularBuffer<uint8_t, 100> rbuffer; // uses 538 bytes
+CircularBuffer<uint8_t, 120> rbuffer; // uses 538 bytes
 
 // into circular buffer
 void toCircularBuffer(uint8_t *pData, size_t length)
@@ -285,11 +306,7 @@ void BMSProcessPacket()
         byteArray[i] = rbuffer.shift();
 
     // stop byte should be at
-    uint8_t stopByteIdx =
-        sizeof(bmsPacketHeaderStruct) +
-        header.dataLen +
-        sizeof(byte);
-    if (rbuffer[stopByteIdx] != BMS_STOPBYTE)
+    if (rbuffer[header.dataLen +       1] != BMS_STOPBYTE)
     {
         log_e("Stoppbyte error");
         return;
@@ -299,13 +316,13 @@ void BMSProcessPacket()
 
     // uint8_t checksumLen = header.dataLen + 2; // status + data len + data
     const byte offset = 2; // header 0xDD and command type are skipped
-    byte calcChecksum;
-    for (size_t i = offset; i < (header.dataLen + 2); i++)
+    byte calcChecksum =  header.status + header.dataLen;
+    for (size_t i = 0; i < (header.dataLen ); i++)
         calcChecksum += rbuffer[i];
     calcChecksum = ((calcChecksum ^ 0xFF) + 1) & 0xFF;
     log_d("calculated calcChecksum: %x", calcChecksum);
 
-    uint8_t rxChecksum = rbuffer[offset + header.dataLen + 2 + 1];
+    uint8_t rxChecksum = rbuffer[ header.dataLen  + 1];
     if (calcChecksum != rxChecksum)
     {
         log_e("Packet is not valid%x, expected value: %x\n", rxChecksum, calcChecksum);
@@ -315,13 +332,108 @@ void BMSProcessPacket()
     switch (header.type)
     {
     case BMS_REG_BASIC_SYSTEM_INFO:
-       __htons
+       handle_rx_0x03();
         break;
     
     default:
         break;
     }
 }
+
+BMSInfo m_0x03_basic_info;
+void handle_rx_0x03() {
+
+    m_0x03_basic_info.voltage           = (uint16_t)(m_rx_data[0]  << 8) | (uint16_t)(m_rx_data[1]);  // 0-1   Total voltage
+    m_0x03_basic_info.current           = (uint16_t)(m_rx_data[2]  << 8) | (uint16_t)(m_rx_data[3]);  // 2-3   Current
+    m_0x03_basic_info.balance_capacity  = (uint16_t)(m_rx_data[4]  << 8) | (uint16_t)(m_rx_data[5]);  // 4-5   Balance capacity
+    m_0x03_basic_info.rate_capacity     = (uint16_t)(m_rx_data[6]  << 8) | (uint16_t)(m_rx_data[7]);  // 6-7   Rate capacity
+    m_0x03_basic_info.cycle_count       = (uint16_t)(m_rx_data[8]  << 8) | (uint16_t)(m_rx_data[9]);  // 8-9   Cycle count
+    m_0x03_basic_info.production_date   = (uint16_t)(m_rx_data[10] << 8) | (uint16_t)(m_rx_data[11]);  // 10-11 Production Date
+    m_0x03_basic_info.balance_status    = (uint16_t)(m_rx_data[12] << 8) | (uint16_t)(m_rx_data[13]);  // 12-13, 14-15 Balance Status
+    m_0x03_basic_info.protection_status = (uint16_t)(m_rx_data[16] << 8) | (uint16_t)(m_rx_data[17]);  // 16-17 Protection status
+
+    // See if there are any new faults.  If so, then increment the count.
+    if (has_new_fault_occured(0))  { m_fault_count.single_cell_overvoltage_protection    += 1; }
+    if (has_new_fault_occured(1))  { m_fault_count.single_cell_undervoltage_protection   += 1; }
+    if (has_new_fault_occured(2))  { m_fault_count.whole_pack_undervoltage_protection    += 1; }
+    if (has_new_fault_occured(3))  { m_fault_count.single_cell_overvoltage_protection    += 1; }
+    if (has_new_fault_occured(4))  { m_fault_count.charging_over_temperature_protection  += 1; }
+    if (has_new_fault_occured(5))  { m_fault_count.charging_low_temperature_protection   += 1; }
+    if (has_new_fault_occured(6))  { m_fault_count.discharge_over_temperature_protection += 1; }
+    if (has_new_fault_occured(7))  { m_fault_count.discharge_low_temperature_protection  += 1; }
+    if (has_new_fault_occured(8))  { m_fault_count.charging_overcurrent_protection       += 1; }
+    if (has_new_fault_occured(9))  { m_fault_count.discharge_overcurrent_protection      += 1; }
+    if (has_new_fault_occured(10)) { m_fault_count.short_circuit_protection              += 1; }
+    if (has_new_fault_occured(11)) { m_fault_count.front_end_detection_ic_error          += 1; }
+    if (has_new_fault_occured(12)) { m_fault_count.software_lock_mos                     += 1; }
+
+    m_0x03_basic_info.software_version = m_rx_data[18];  // 18    Software version
+    m_0x03_basic_info.remaining_soc    = m_rx_data[19];  // 19    Remaining state of charge
+    m_0x03_basic_info.mosfet_status    = m_rx_data[20];  // 20    MOSFET status
+    m_0x03_basic_info.num_cells        = m_rx_data[21];  // 21    # of batteries in series
+    m_0x03_basic_info.num_ntcs         = m_rx_data[22];  // 22    # of NTCs
+
+    for (uint8_t i=0; i < __min(BMS_MAX_NTCs, m_0x03_basic_info.num_ntcs); i++) {
+        uint8_t ntc_index = 23 + (i * 2);
+        m_0x03_basic_info.ntc_temps[i] = (uint16_t)(m_rx_data[ntc_index] << 8) | (uint16_t)(m_rx_data[ntc_index + 1]);
+    }
+    m_last_0x03_timestamp = millis();
+}
+
+void OverkillSolarBms2::handle_rx_0x04() {
+    #ifdef BMS_OPTION_DEBUG_STATE_MACHINE
+        // Serial.println("Got an 0x04 Cell Voltage msg");
+    #endif
+    for (uint8_t i=0; i < __min(BMS_MAX_CELLS, m_0x03_basic_info.num_cells); i++) {
+        m_0x04_cell_voltages[i] = (uint16_t)(m_rx_data[i * 2] << 8) | (uint16_t)(m_rx_data[(i * 2) + 1]);
+    }
+    m_last_0x04_timestamp = millis();
+}
+
+void OverkillSolarBms2::handle_rx_0x05() {
+    m_0x05_bms_name = String("");
+    for (uint8_t i=0; i < __min(BMS_MAX_RX_DATA_LEN, m_rx_length); i++) {
+        m_0x05_bms_name += (char)m_rx_data[i];
+    }
+}
+
+void OverkillSolarBms2::handle_rx_param() {
+    // uint16_t resp;
+    // // Serial.print("Got RX param.  cmd_code:");
+    // // Serial.print(m_rx_cmd_code, HEX);
+    // // Serial.print(", length: ");
+    // // Serial.print(m_rx_length);
+    if (m_rx_length == 0) {  // Reply to write command
+        m_last_param_timestamp = millis();
+    }
+    else if (m_rx_length == 2) {  // Reply to read command
+        m_param = (uint16_t)(m_rx_data[0] << 8) | (uint16_t)(m_rx_data[1]);
+        // // Serial.print(", rx_data: ");
+        // // Serial.println(m_param, HEX);
+        m_last_param_timestamp = millis();
+    }
+    else {
+        #ifdef BMS_OPTION_DEBUG_PARAM
+            // Serial.print(F("ERROR! Got a reply to 0x"));
+            // Serial.print(m_rx_cmd_code, HEX);
+            // Serial.print(F(" but length was "));
+            // Serial.println(m_rx_length);
+        #endif
+    }
+    // // Serial.println("");
+}
+
+void OverkillSolarBms2::handle_rx_0xA2() {
+    // TODO: Handle the barcode here
+    m_last_param_timestamp = millis();
+}
+
+void OverkillSolarBms2::handle_rx_0xA1() {
+    // TODO: Handle the BMS name here
+    m_last_param_timestamp = millis();
+}
+
+
 
 bool bleCollectPacket(char *data, uint32_t dataSize) // reconstruct packet from BLE incomming data, called by notifyCallback function
 {
