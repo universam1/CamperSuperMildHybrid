@@ -76,9 +76,11 @@ void handle_rx_0x03()
 
   // m_0x03_basic_info.software_version = m_rx_data[18];  // 18    Software version
   // m_0x03_basic_info.remaining_soc    = m_rx_data[19];  // 19    Remaining state of charge
-  // m_0x03_basic_info.mosfet_status    = m_rx_data[20];  // 20    MOSFET status
+  //   bmsInfo.mosfet_status    = rbuffer[20];  // 20    MOSFET status
   // m_0x03_basic_info.num_cells        = m_rx_data[21];  // 21    # of batteries in series
   // m_0x03_basic_info.num_ntcs         = m_rx_data[22];  // 22    # of NTCs
+  bmsInfo.dischargeFET = (rbuffer[20] >> 1) & 1;
+  bmsInfo.chargeFET = rbuffer[20] & 1;
 
   for (uint8_t i = 0; i < 2; i++)
   {

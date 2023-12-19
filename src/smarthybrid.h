@@ -42,6 +42,8 @@ typedef struct BMSInfo_t
   float NTC[2];
   float CellVoltages[4];
   uint16_t CellDiff;
+  bool dischargeFET;
+  bool chargeFET;
 } BMSInfo_t;
 
 extern OBDdata_t obdData;

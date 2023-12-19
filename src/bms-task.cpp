@@ -155,6 +155,19 @@ void vBMS_Polling(void *parameter)
   vTaskDelete(NULL);
 }
 
+
+void set_0xE1_mosfet_control_charge(bool charge) {
+    uint8_t   m_0xE1_mosfet_control[2];
+
+    if (charge) {
+        m_0xE1_mosfet_control[1] &= 0b10;  // Disable bit zero
+    }
+    else {
+        m_0xE1_mosfet_control[1] |= 0b01;  // Enable bit zero
+    }
+    write(BMS_WRITE, BMS_REG_CTL_MOSFET, m_0xE1_mosfet_control, 2);
+}
+
 void vBMS_Scan(void *parameter)
 {
   while (true)
