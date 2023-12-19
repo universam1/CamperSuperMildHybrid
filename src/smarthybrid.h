@@ -4,7 +4,7 @@
 #pragma once
 
 #include <Arduino.h>
-#include <bms2.h>
+#include <BLEDevice.h>
 
 #define myName "SmartHybrid"
 
@@ -39,16 +39,20 @@ typedef struct BMSInfo_t
   float Voltage;
   float Current;
   float Power;
+  float NTC[2];
   float CellVoltages[4];
-
+  uint16_t CellDiff;
 } BMSInfo_t;
 
 extern OBDdata_t obdData;
 
 extern BMSInfo_t bmsInfo;
 
-extern TaskHandle_t vBMS_Task_hdl, vOBD_Task_hdl, vTFT_Task_hdl;
-void vBMS_Task(void *parameter);
+void BMSStart();
+void intoCircularBuffer(uint8_t *pData, size_t length);
+void vBMSProcessTask(void *parameter);
+
+extern TaskHandle_t vOBD_Task_hdl, vTFT_Task_hdl, vBMSProcess_Task_hdl;
 void vOBD_Task(void *parameter);
 void vTFT_Task(void *parameter);
 #endif // _GLOBALS_H

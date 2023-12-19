@@ -4,6 +4,9 @@
         "*.tcc": "cpp",
         "cstdio": "cpp",
         "new": "cpp",
-        "*.tpp": "cpp"
+        "*.tpp": "cpp",
+        "array": "cpp",
+        "string": "cpp",
+        "string_view": "cpp"
     }
 }

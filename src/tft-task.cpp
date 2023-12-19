@@ -94,7 +94,7 @@ void vTFT_Task(void *parameter)
         log_d("BMS update received");
         tft.setTextSize(2);
         tft.setCursor(70, 0);
-        tft.printf("%2.1fV", (bmsInfo.Voltage));
+        tft.printf("%2.2fV", (bmsInfo.Voltage));
 
         tft.setCursor(70, 20);
         // tft.printf("%4.*fA", (abs(bmsInfo.Current) < 10.0 ? 1 : 0), bmsInfo.Current);
@@ -114,15 +114,8 @@ void vTFT_Task(void *parameter)
       if (ulNotifiedValue & NotificationBits::CELL_UPDATE_BIT)
       {
         log_d("Cell update received");
-        float minC = bmsInfo.CellVoltages[0], maxC = bmsInfo.CellVoltages[0];
-        for (size_t i = 1; i < 4; i++)
-        {
-          minC = min(minC, bmsInfo.CellVoltages[i]);
-          maxC = max(maxC, bmsInfo.CellVoltages[i]);
-        }
-
         tft.setCursor(0, 35);
-        tft.printf("^%2.0fmV", (maxC - minC) * 1000.0);
+        tft.printf("^%3dmV", bmsInfo.CellDiff);
         tft.display();
       }
 
