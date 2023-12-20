@@ -135,7 +135,7 @@ void vTFT_Task(void *parameter)
     }
     else
     {
-      log_e("Did not receive a notification within the expected time.");
+      // log_e("Did not receive a notification within the expected time.");
       tft.clearDisplay();
       tft.setCursor(0, SCREEN_HEIGHT / 2);
       tft.print("Offline");

@@ -12,6 +12,8 @@ uint8_t cellInfoRequest[] = {0xdd, 0xa5, 0x4, 0x0, 0xff, 0xfc, 0x77};
 
 TaskHandle_t vBMS_Task_hdl, vBMS_Scan_hdl, vBMS_Polling_hdl;
 BLERemoteCharacteristic *pTxRemoteCharacteristic;
+BLEAdvertisedDevice *bmsDevice = nullptr;
+BLEClient *pClient = nullptr;
 bool connectToServer(BLEAdvertisedDevice advertisedDevice);
 // The remote service we wish to connect to. Needs check/change when other BLE module used.
 static BLEUUID serviceUUID("0000ff00-0000-1000-8000-00805f9b34fb"); // xiaoxiang bms original module
@@ -32,17 +34,23 @@ class MyAdvertisedDeviceCallbacks : public BLEAdvertisedDeviceCallbacks
     log_d("BLE Advertised Device found: %s", advertisedDevice.toString().c_str());
     if (advertisedDevice.haveServiceUUID() && advertisedDevice.isAdvertisingService(serviceUUID))
     {
+      // vTaskSuspend(vBMS_Scan_hdl);
       BLEDevice::getScan()->stop();
-      vTaskSuspend(vBMS_Scan_hdl);
-      if (connectToServer(advertisedDevice))
-      {
-        log_d("connected to the BLE Server.");
-      }
-      else
-      {
-        log_d("failed to connect to the server; restart the scan.");
-        vTaskResume(vBMS_Scan_hdl);
-      }
+      log_d("Found serviceUUID service");
+      bmsDevice = new BLEAdvertisedDevice(advertisedDevice);
+      // if (connectToServer(advertisedDevice))
+      // {
+      //   log_d("connected to the BLE Server.");
+      // }
+      // else
+      // {
+      //   log_d("failed to connect to the server; restart the scan.");
+      //   vTaskResume(vBMS_Scan_hdl);
+      // }
+    }
+    else
+    {
+      log_d("peer not advertising our service");
     }
   }
 };
@@ -52,15 +60,16 @@ class MyClientCallback : public BLEClientCallbacks
   void onConnect(BLEClient *pclient)
   {
     log_d("onConnect");
-    vTaskSuspend(vBMS_Scan_hdl);
+    // vTaskSuspend(vBMS_Scan_hdl);
     vTaskResume(vBMS_Polling_hdl);
   }
 
   void onDisconnect(BLEClient *pclient)
   {
     log_d("onDisconnect");
+    bmsDevice = nullptr;
     vTaskSuspend(vBMS_Polling_hdl);
-    vTaskResume(vBMS_Scan_hdl);
+    // vTaskResume(vBMS_Scan_hdl);
   }
 };
 
@@ -70,16 +79,22 @@ static void notifyCallback(BLERemoteCharacteristic *pBLERemoteCharacteristic, ui
   intoCircularBuffer(pData, length);
 }
 
-bool connectToServer(BLEAdvertisedDevice advertisedDevice)
+bool connectToServer()
 {
-  BLEAdvertisedDevice *bmsDevice = new BLEAdvertisedDevice(advertisedDevice);
-  log_d("Forming a connection to %s", bmsDevice->getAddress().toString().c_str());
-  BLEClient *pClient = BLEDevice::createClient();
-  log_d(" - Created client");
-  pClient->setClientCallbacks(new MyClientCallback());
+  if (bmsDevice == nullptr)
+    return false;
 
+  if (pClient->isConnected())
+  {
+    log_d("already connected");
+    return true;
+  }
+
+  log_d("Forming a connection to %s", bmsDevice->getAddress().toString().c_str());
   // Connect to the remote BLE Server.
-  pClient->connect(bmsDevice); // if you pass BLEAdvertisedDevice instead of address, it will be recognized type of peer device address (public or private)
+  BLEAddress address = bmsDevice->getAddress();
+  esp_ble_addr_type_t type = bmsDevice->getAddressType();
+  pClient->connect(address, type); // if you pass BLEAdvertisedDevice instead of address, it will be recognized type of peer device address (public or private)
   log_d(" - Connected to server");
   // Obtain a reference to the service we are after in the remote BLE server.
   BLERemoteService *pRemoteService = pClient->getService(serviceUUID);
@@ -155,41 +170,60 @@ void vBMS_Polling(void *parameter)
   vTaskDelete(NULL);
 }
 
+// void set_0xE1_mosfet_control_charge(bool charge) {
+//     uint8_t   m_0xE1_mosfet_control[2];
 
-void set_0xE1_mosfet_control_charge(bool charge) {
-    uint8_t   m_0xE1_mosfet_control[2];
-
-    if (charge) {
-        m_0xE1_mosfet_control[1] &= 0b10;  // Disable bit zero
-    }
-    else {
-        m_0xE1_mosfet_control[1] |= 0b01;  // Enable bit zero
-    }
-    write(BMS_WRITE, BMS_REG_CTL_MOSFET, m_0xE1_mosfet_control, 2);
-}
+//     if (charge) {
+//         m_0xE1_mosfet_control[1] &= 0b10;  // Disable bit zero
+//     }
+//     else {
+//         m_0xE1_mosfet_control[1] |= 0b01;  // Enable bit zero
+//     }
+//     write(BMS_WRITE, BMS_REG_CTL_MOSFET, m_0xE1_mosfet_control, 2);
+// }
 
 void vBMS_Scan(void *parameter)
 {
+  BLEDevice::init(myName);
+  log_d("vBMS_Scan: %d", xPortGetCoreID());
+  pClient = BLEDevice::createClient();
+  BLEClient *pClient = BLEDevice::createClient();
+  log_d(" - Created client");
+  pClient->setClientCallbacks(new MyClientCallback());
+
+  BLEScan *pBLEScan = BLEDevice::getScan();
+  pBLEScan->setAdvertisedDeviceCallbacks(new MyAdvertisedDeviceCallbacks());
+  pBLEScan->setInterval(1349);
+  pBLEScan->setWindow(449);
+  pBLEScan->setActiveScan(true);
+
   while (true)
   {
-    BLEScan *pBLEScan = BLEDevice::getScan();
-    pBLEScan->setAdvertisedDeviceCallbacks(new MyAdvertisedDeviceCallbacks());
-    pBLEScan->setInterval(1349);
-    pBLEScan->setWindow(449);
-    pBLEScan->setActiveScan(true);
-    pBLEScan->start(5, true);
-    vTaskDelay(pdMS_TO_TICKS(1000));
+    if (connectToServer())
+    {
+      log_d("connected to the BLE Server.");
+      vTaskResume(vBMS_Polling_hdl);
+      vTaskDelay(pdMS_TO_TICKS(1000));
+      continue;
+    }
+
+    log_d("failed to connect to the server; restart the scan.");
+    bmsDevice = nullptr;
+
+    BLEScanResults foundDevices = pBLEScan->start(5);
+    log_d("scan results: %d", foundDevices.getCount());
+    for (int i = 0; i < foundDevices.getCount(); i++)
+    {
+      BLEAdvertisedDevice device = foundDevices.getDevice(i);
+      log_d("Device %d: %s", i, device.toString().c_str());
+    }
   }
   vTaskDelete(NULL);
 }
 
 void BMSStart()
 {
-  log_d("vBMS_Task: %d", xPortGetCoreID());
-
-  BLEDevice::init(myName);
-
-  xTaskCreatePinnedToCore(vBMS_Scan, "SCAN", 5000, NULL, 2, &vBMS_Scan_hdl, tskNO_AFFINITY);
+  xTaskCreatePinnedToCore(vBMS_Scan, "SCAN", 5000, NULL, 2, &vBMS_Scan_hdl, 0);
   xTaskNotify(vTFT_Task_hdl, NotificationBits::BMS_INIT_BIT, eSetBits);
   xTaskCreatePinnedToCore(vBMS_Polling, "POLL", 5000, NULL, 2, &vBMS_Polling_hdl, tskNO_AFFINITY);
   xTaskCreatePinnedToCore(vBMSProcessTask, "BMSProcess", 5000, NULL, 2, &vBMSProcess_Task_hdl, tskNO_AFFINITY);

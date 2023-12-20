@@ -65,6 +65,32 @@ uint8_t splitAt = 20;
 // [D][uart_debug:114]: >>> DD:A5:03:00:FF:FD:77
 // [D][uart_debug:114]: <<< DD:03:00:1D:06:0B:00:00:01:ED:01:F4:00:00:2C:7C:00:00:00:00:10:00:80:63:02:04:03:0B:A0:0B:9D:0B:98:FA:55:77
 
+void addChecksum( uint8_t *data, uint8_t len){
+  byte calcChecksum = 0;
+  for (uint8_t i = 2; i < data[3]+2; i++)
+  {
+    calcChecksum += data[i];
+  }
+  calcChecksum = ((calcChecksum ^ 0xFF) + 1) & 0xFF;
+}
+
+void sendChunked(BLECharacteristic *txChar, uint8_t *data, uint8_t len)
+{
+  const uint8_t chunkSize = 20;
+  uint8_t chunks = len / chunkSize;
+  uint8_t lastChunkSize = len % chunkSize;
+  uint8_t i = 0;
+  for (i = 0; i < chunks; i++)
+  {
+    txChar->setValue(data + i * chunkSize, chunkSize);
+    txChar->notify();
+  }
+  if (lastChunkSize > 0)
+  {
+    txChar->setValue(data + i * chunkSize, lastChunkSize);
+    txChar->notify();
+  }
+}
 class MyRXCallbacks : public BLECharacteristicCallbacks
 {
   void onWrite(BLECharacteristic *pCharacteristic)
@@ -110,23 +136,6 @@ class MyRXCallbacks : public BLECharacteristicCallbacks
         }
         Serial.println("*********");
       }
-    }
-  }
-  void sendChunked(BLECharacteristic *txChar, uint8_t *data, uint8_t len)
-  {
-    const uint8_t chunkSize = 20;
-    uint8_t chunks = len / chunkSize;
-    uint8_t lastChunkSize = len % chunkSize;
-    uint8_t i = 0;
-    for (i = 0; i < chunks; i++)
-    {
-      txChar->setValue(data + i * chunkSize, chunkSize);
-      txChar->notify();
-    }
-    if (lastChunkSize > 0)
-    {
-      txChar->setValue(data + i * chunkSize, lastChunkSize);
-      txChar->notify();
     }
   }
 };

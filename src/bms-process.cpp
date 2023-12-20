@@ -41,9 +41,13 @@ void intoCircularBuffer(uint8_t *pData, size_t length)
 {
   for (size_t i = 0; i < length; i++)
     rbuffer.push(pData[i]);
+
   if (pData[length - 1] == BMS_STOPBYTE)
+  {
     // we have a frame
+    log_i("buffer usage: %d", rbuffer.size());
     xTaskNotify(vBMSProcess_Task_hdl, 0, eNoAction);
+  }
 }
 
 void handle_rx_0x03()
@@ -88,6 +92,8 @@ void handle_rx_0x03()
     bmsInfo.NTC[i] = ((uint16_t)(rbuffer[ntc_index] << 8) | (rbuffer[ntc_index + 1])) * 0.1; // 23-24, 25-26 NTC temperature (0.1 degrees K per LSB)
     bmsInfo.NTC[i] -= 273.15;                                                                // Convert Kelvin to Celsius
   }
+  log_i("BMS Info: %.2fV %.2fA %.2fW %.1fC %.1fC C:%d D:%d",
+        bmsInfo.Voltage, bmsInfo.Current, bmsInfo.Power, bmsInfo.NTC[0], bmsInfo.NTC[1], bmsInfo.chargeFET, bmsInfo.dischargeFET);
 }
 
 void handle_rx_0x04()
@@ -101,6 +107,8 @@ void handle_rx_0x04()
     maxC = max(maxC, cellmV);
   }
   bmsInfo.CellDiff = maxC - minC;
+  log_i("Cell voltages: %.3fV %.3fV %.3fV %.3fV diff: %dmV",
+        bmsInfo.CellVoltages[0], bmsInfo.CellVoltages[1], bmsInfo.CellVoltages[2], bmsInfo.CellVoltages[3], bmsInfo.CellDiff);
 }
 
 void BMSProcessFrame()
@@ -108,15 +116,21 @@ void BMSProcessFrame()
   // find starting byte, flush
   while (rbuffer.first() != BMS_STARTBYTE)
   {
-    if (!rbuffer.available())
+
+    if (rbuffer.isEmpty())
+    {
+      log_d("buffer empty");
       return;
+    }
+    log_d("flushing %02X", rbuffer.first());
     rbuffer.shift();
   }
 
   // we might have a frame
   // sanity check, minimum size
-  if (rbuffer.available() < 27)
+  if (rbuffer.size() < 27)
   {
+    log_d("buffer too small");
     rbuffer.shift(); // invalidate for next iteration
     return;
   }
@@ -128,9 +142,14 @@ void BMSProcessFrame()
     byteArray[i] = rbuffer.shift();
 
   // stop byte should be at
-  if (rbuffer[header.dataLen + 1] != BMS_STOPBYTE)
+  if (rbuffer[header.dataLen + 2] != BMS_STOPBYTE)
   {
-    log_e("Stoppbyte error");
+    log_d("header: %02X %02X %02X %02X", header.start, header.type, header.status, header.dataLen);
+    log_d("size: %d", rbuffer.size());
+    for (size_t i = 0; i < rbuffer.size(); i++)
+      Serial.printf("%02X ", rbuffer[i]);
+    Serial.println();
+    log_e("Stoppbyte error %02X", rbuffer[header.dataLen + 1]);
     return;
   }
 
@@ -142,12 +161,12 @@ void BMSProcessFrame()
   for (size_t i = 0; i < header.dataLen; i++)
     calcChecksum += rbuffer[i];
   calcChecksum = ((calcChecksum ^ 0xFF) + 1) & 0xFF;
-  log_d("calculated calcChecksum: %x", calcChecksum);
+  log_d("calculated calcChecksum: %02X", calcChecksum);
 
   uint8_t rxChecksum = rbuffer[header.dataLen + 1];
   if (calcChecksum != rxChecksum)
   {
-    log_e("Packet is not valid%x, expected value: %x\n", rxChecksum, calcChecksum);
+    log_e("Packet is not valid %02X, expected value: %02X", rxChecksum, calcChecksum);
     return;
   }
 
@@ -164,16 +183,15 @@ void BMSProcessFrame()
     break;
 
   default:
-    log_e("Unknown packet type: %x", header.type);
+    log_e("Unknown packet type: %02X", header.type);
     break;
   }
 
   // remove the frame from the buffer
-  while (rbuffer.shift() != BMS_STOPBYTE)
+  while (rbuffer.shift() != BMS_STOPBYTE && !rbuffer.isEmpty())
   {
-    if (!rbuffer.available())
-      return;
   }
+
   return;
 }
 
@@ -183,6 +201,7 @@ void vBMSProcessTask(void *parameter)
   {
     if (xTaskNotifyWait(pdFALSE, ULONG_MAX, NULL, portMAX_DELAY) == pdFALSE)
       continue;
+    log_d("start processing frame");
     BMSProcessFrame();
   }
   vTaskDelete(NULL);
