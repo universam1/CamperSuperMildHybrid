@@ -110,7 +110,21 @@ void handle_rx_0x04()
   log_i("Cell voltages: %.3fV %.3fV %.3fV %.3fV diff: %dmV",
         bmsInfo.CellVoltages[0], bmsInfo.CellVoltages[1], bmsInfo.CellVoltages[2], bmsInfo.CellVoltages[3], bmsInfo.CellDiff);
 }
+// uint16_t calcChecksum(uint8_t *data, uint8_t len)
+// {
+//   uint16_t checksum = 0x00;
+//   for (size_t i = 0; i < len; i++)
+//     checksum = checksum - data[i];
 
+//   return checksum;
+// }
+// void addChecksum(uint8_t *data, uint8_t len)
+// {
+//   uint16_t checksum = calcChecksum(data, len);
+
+//   data[len - 1 - 2] = (uint8_t)((checksum >> 8) & 0xFF);
+//   data[len - 1 - 1] = (uint8_t)(checksum & 0xFF);
+// }
 void BMSProcessFrame()
 {
   // find starting byte, flush
@@ -157,16 +171,17 @@ void BMSProcessFrame()
 
   // uint8_t checksumLen = header.dataLen + 2; // status + data len + data
   // header 0xDD and command type are skipped
-  byte calcChecksum = header.status + header.dataLen;
+  uint16_t computed_crc = 0x00;
+  computed_crc -= header.status;
+  computed_crc -= header.dataLen;
   for (size_t i = 0; i < header.dataLen; i++)
-    calcChecksum += rbuffer[i];
-  calcChecksum = ((calcChecksum ^ 0xFF) + 1) & 0xFF;
-  log_d("calculated calcChecksum: %02X", calcChecksum);
+    computed_crc -= rbuffer[i];
+  log_d("calculated calcChecksum: %02X", computed_crc);
 
-  uint8_t rxChecksum = rbuffer[header.dataLen + 1];
-  if (calcChecksum != rxChecksum)
+  uint16_t remote_crc = uint16_t(rbuffer[header.dataLen]) << 8 | (uint16_t(rbuffer[header.dataLen + 1]) << 0);
+  if (computed_crc != remote_crc)
   {
-    log_e("Packet is not valid %02X, expected value: %02X", rxChecksum, calcChecksum);
+    log_e("Packet is not valid %02X, expected value: %02X", remote_crc, computed_crc);
     return;
   }
 
