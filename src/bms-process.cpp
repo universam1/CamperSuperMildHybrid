@@ -247,12 +247,12 @@ std::vector<uint8_t> cellInfoRequest()
 std::vector<uint8_t> mosfetChargeCtrlRequest(bool charge)
 {
   std::vector<uint8_t> r = {BMS_STARTBYTE, BMS_WRITE, BMS_REG_CTL_MOSFET, 2, 0x0, 0x0, 0x0, 0x0, BMS_STOPBYTE};
-  uint8_t state = bmsInfo.stateFET;
+  uint8_t state =0;
 
   if (charge)
-    state &= 0b10;
+    state = 0b00;
   else
-    state |= 0b01;
+    state = 0b01;
   r[5] = state;
   addChecksum(&r);
   log_d("%02X %02X %02X %02X %02X %02X %02X %02X %02X",
