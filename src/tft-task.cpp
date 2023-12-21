@@ -14,7 +14,7 @@ TaskHandle_t vTFT_Task_hdl;
 #define OLED_SCL 4
 
 Adafruit_SSD1306 tft(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire);
-
+uint32_t bmsUpdateCouter = 0;
 void drawProgressbar(int x, int y, int width, int height, int progress)
 {
   progress = constrain(progress, 0, 100);
@@ -34,6 +34,53 @@ String formatPower(float power, uint8_t precision)
   while (p.length() < precision)
     p = " " + p;
   return p;
+}
+
+void manageCharging()
+{
+  static uint32_t lastCoasting = 0;
+  static uint32_t lastBmsUpdateCouter = 0;
+
+  if (obdData.coasting)
+    lastCoasting = millis();
+
+  // prevent race condition with bms update
+  if (lastBmsUpdateCouter == bmsUpdateCouter)
+  {
+    log_i("No BMS update since last OBD update");
+    return;
+  }
+
+  // stop charging if load is above 50% or 20% for more than 10 seconds
+  if (bmsInfo.chargeFET)
+  {
+    // hysterese
+    if (obdData.load > 20 && millis() - lastCoasting > 1000)
+    {
+      log_i("Disabling charging delayed");
+      xTaskNotify(vBMS_Polling_hdl, NotificationBits::FET_DISABLE_BIT, eSetBits);
+      lastBmsUpdateCouter = bmsUpdateCouter;
+      tft.invertDisplay(false);
+    }
+    else if (obdData.load > 50)
+    {
+      log_i("Disabling charging forced");
+      xTaskNotify(vBMS_Polling_hdl, NotificationBits::FET_DISABLE_BIT, eSetBits);
+      lastBmsUpdateCouter = bmsUpdateCouter;
+      tft.invertDisplay(false);
+    }
+  }
+  else
+  // start charging if load is below 20% and charging is not enabled
+  {
+    if (obdData.coasting)
+    {
+      log_i("Enabling charging");
+      xTaskNotify(vBMS_Polling_hdl, NotificationBits::FET_ENABLE_BIT, eSetBits);
+      lastBmsUpdateCouter = bmsUpdateCouter;
+      tft.invertDisplay(true);
+    }
+  }
 }
 
 void vTFT_Task(void *parameter)
@@ -92,12 +139,12 @@ void vTFT_Task(void *parameter)
       if (ulNotifiedValue & NotificationBits::BMS_UPDATE_BIT)
       {
         log_d("BMS update received");
+        bmsUpdateCouter++;
         tft.setTextSize(2);
         tft.setCursor(70, 0);
         tft.printf("%2.2fV", (bmsInfo.Voltage));
 
         tft.setCursor(70, 20);
-        // tft.printf("%4.*fA", (abs(bmsInfo.Current) < 10.0 ? 1 : 0), bmsInfo.Current);
         tft.print(formatPower(bmsInfo.Current, 4));
         tft.setCursor(118, 20);
         tft.print("A");
@@ -105,7 +152,6 @@ void vTFT_Task(void *parameter)
         tft.print("W");
         tft.setTextSize(3);
         tft.setCursor(46, 43);
-        // tft.printf("%5.*f", (abs(p) < 10.0 ? 1 : 0), p);
         log_d("Power: %f : %s", bmsInfo.Power, formatPower(bmsInfo.Power, 5).c_str());
         tft.print(formatPower(bmsInfo.Power, 4));
         tft.display();
@@ -122,7 +168,7 @@ void vTFT_Task(void *parameter)
       if (ulNotifiedValue & NotificationBits::OBD_UPDATE_BIT)
       {
         log_i("OBD update received");
-        tft.invertDisplay(obdData.load < 20);
+        manageCharging();
 
         drawProgressbar(0, 0, 60, 12, obdData.load);
         tft.setCursor(0, 15);
@@ -135,7 +181,7 @@ void vTFT_Task(void *parameter)
     }
     else
     {
-      // log_e("Did not receive a notification within the expected time.");
+      log_e("Did not receive a notification within the expected time.");
       tft.clearDisplay();
       tft.setCursor(0, SCREEN_HEIGHT / 2);
       tft.print("Offline");

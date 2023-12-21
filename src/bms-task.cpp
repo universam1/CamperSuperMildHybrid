@@ -5,11 +5,6 @@
 #define POLLING_INTERVAL_MS 300
 BMSInfo_t bmsInfo;
 
-// header status command length data calcChecksum footer
-//   DD     A5      03     00    FF     FD      77
-uint8_t basicRequest[] = {0xdd, 0xa5, 0x3, 0x0, 0xff, 0xfd, 0x77};
-uint8_t cellInfoRequest[] = {0xdd, 0xa5, 0x4, 0x0, 0xff, 0xfc, 0x77};
-
 TaskHandle_t vBMS_Task_hdl, vBMS_Scan_hdl, vBMS_Polling_hdl;
 BLERemoteCharacteristic *pTxRemoteCharacteristic;
 BLEAdvertisedDevice *bmsDevice = nullptr;
@@ -38,20 +33,9 @@ class MyAdvertisedDeviceCallbacks : public BLEAdvertisedDeviceCallbacks
       BLEDevice::getScan()->stop();
       log_d("Found serviceUUID service");
       bmsDevice = new BLEAdvertisedDevice(advertisedDevice);
-      // if (connectToServer(advertisedDevice))
-      // {
-      //   log_d("connected to the BLE Server.");
-      // }
-      // else
-      // {
-      //   log_d("failed to connect to the server; restart the scan.");
-      //   vTaskResume(vBMS_Scan_hdl);
-      // }
     }
     else
-    {
       log_d("peer not advertising our service");
-    }
   }
 };
 
@@ -69,7 +53,6 @@ class MyClientCallback : public BLEClientCallbacks
     log_d("onDisconnect");
     bmsDevice = nullptr;
     vTaskSuspend(vBMS_Polling_hdl);
-    // vTaskResume(vBMS_Scan_hdl);
   }
 };
 
@@ -96,6 +79,7 @@ bool connectToServer()
   esp_ble_addr_type_t type = bmsDevice->getAddressType();
   pClient->connect(address, type); // if you pass BLEAdvertisedDevice instead of address, it will be recognized type of peer device address (public or private)
   log_d(" - Connected to server");
+
   // Obtain a reference to the service we are after in the remote BLE server.
   BLERemoteService *pRemoteService = pClient->getService(serviceUUID);
   if (pRemoteService == nullptr)
@@ -153,6 +137,7 @@ void vBMS_Polling(void *parameter)
   byte idx = 0;
   while (true)
   {
+    // safety check.
     if (pTxRemoteCharacteristic == nullptr)
     {
       log_e("Remote TX characteristic unavailable");
@@ -160,27 +145,36 @@ void vBMS_Polling(void *parameter)
       continue;
     }
 
-    if (++idx % 4)
-      pTxRemoteCharacteristic->writeValue(basicRequest, sizeof(basicRequest));
+    // mosfet control has priority, using notifcation as regular poll delay
+    uint32_t ulNotifiedValue;
+    std::vector<uint8_t> val;
+    if (xTaskNotifyWait(pdFALSE, ULONG_MAX, &ulNotifiedValue, pdMS_TO_TICKS(POLLING_INTERVAL_MS)) == pdPASS)
+    {
+      if (ulNotifiedValue & NotificationBits::FET_ENABLE_BIT)
+      {
+        log_i("FET enable received");
+        val = mosfetChargeCtrlRequest(true);
+      }
+      else if (ulNotifiedValue & NotificationBits::FET_DISABLE_BIT)
+      {
+        log_i("FET disable received");
+        val = mosfetChargeCtrlRequest(false);
+      }
+      else
+      {
+        log_e("Unknown notification received: %d", ulNotifiedValue);
+        continue;
+      }
+    }
+    else if (++idx % 4)
+      val = basicRequest();
     else
-      pTxRemoteCharacteristic->writeValue(cellInfoRequest, sizeof(cellInfoRequest));
+      val = cellInfoRequest();
 
-    vTaskDelay(pdMS_TO_TICKS(POLLING_INTERVAL_MS));
+    pTxRemoteCharacteristic->writeValue(val.data(), val.size());
   }
   vTaskDelete(NULL);
 }
-
-// void set_0xE1_mosfet_control_charge(bool charge) {
-//     uint8_t   m_0xE1_mosfet_control[2];
-
-//     if (charge) {
-//         m_0xE1_mosfet_control[1] &= 0b10;  // Disable bit zero
-//     }
-//     else {
-//         m_0xE1_mosfet_control[1] |= 0b01;  // Enable bit zero
-//     }
-//     write(BMS_WRITE, BMS_REG_CTL_MOSFET, m_0xE1_mosfet_control, 2);
-// }
 
 void vBMS_Scan(void *parameter)
 {
@@ -228,59 +222,3 @@ void BMSStart()
   xTaskCreatePinnedToCore(vBMS_Polling, "POLL", 5000, NULL, 2, &vBMS_Polling_hdl, tskNO_AFFINITY);
   xTaskCreatePinnedToCore(vBMSProcessTask, "BMSProcess", 5000, NULL, 2, &vBMSProcess_Task_hdl, tskNO_AFFINITY);
 }
-
-//   while (true)
-//   {
-// #ifndef SIMULATE_BMS
-//     BLEClient.bleLoop();
-//     if (con)
-//     {
-//       log_d("BLEClient connected");
-//       bms.main_task(true);
-// #else
-//     {
-// #endif
-//       if (millis() - m_last_basic_info_query_time >= basic_info_query_rate)
-//       {
-// #ifndef SIMULATE_BMS
-//         // bms.query_0x03_basic_info();
-//         bmsInfo.Voltage = bms.get_voltage();
-//         bmsInfo.Current = bms.get_current();
-// #else
-//         bmsInfo.Voltage = random(12800, 14600) / 1000.0;
-//         bmsInfo.Current = random(-1800, 600) / 1000.0;
-// #endif
-//         bmsInfo.Power = bmsInfo.Voltage * bmsInfo.Current;
-//         log_d("BMS Info: %.2fV %.2fA %.2fW",
-//               bmsInfo.Voltage, bmsInfo.Current, bmsInfo.Power);
-//         xTaskNotify(vTFT_Task_hdl, NotificationBits::BMS_UPDATE_BIT, eSetBits);
-//         m_last_basic_info_query_time = millis();
-//       }
-
-//       if (millis() - m_last_cell_voltages_query_time >= cell_query_rate)
-//       {
-// #ifndef SIMULATE_BMS
-//         // bms.query_0x04_cell_voltages();
-// #endif
-//         for (size_t i = 0; i < 4; i++)
-// #ifndef SIMULATE_BMS
-//           bmsInfo.CellVoltages[i] = bms.get_cell_voltage(i);
-// #else
-//           bmsInfo.CellVoltages[i] = random(3100, 3300) / 1000.0;
-// #endif
-//         xTaskNotify(vTFT_Task_hdl, NotificationBits::CELL_UPDATE_BIT, eSetBits);
-//         m_last_cell_voltages_query_time = millis();
-//       }
-//       vTaskDelay(pdMS_TO_TICKS(10));
-//     }
-// #ifndef SIMULATE_BMS
-//     else
-//     {
-//       log_e("BLEClient not connected");
-//       vTaskDelay(pdMS_TO_TICKS(3000));
-//     }
-// #endif
-//   }
-
-//   vTaskDelete(NULL);
-// }

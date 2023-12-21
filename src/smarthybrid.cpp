@@ -67,8 +67,7 @@ void setup()
 
   xTaskCreatePinnedToCore(vTFT_Task, "TFT", 5000, NULL, 2, &vTFT_Task_hdl, tskNO_AFFINITY);
   BMSStart();
-  // xTaskCreatePinnedToCore(vBMS_Task, "BMS", 5000, NULL, 3, &vBMS_Task_hdl, 0);
-  // xTaskCreatePinnedToCore(vOBD_Task, "OBD", 5000, NULL, 4, &vOBD_Task_hdl, tskNO_AFFINITY);
+  xTaskCreatePinnedToCore(vOBD_Task, "OBD", 5000, NULL, 4, &vOBD_Task_hdl, tskNO_AFFINITY);
 
   // // Disconnect() may take up to 10 secs max
   // if (SerialBT.disconnect())

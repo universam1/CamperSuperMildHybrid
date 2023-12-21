@@ -15,6 +15,8 @@ enum NotificationBits
   CELL_UPDATE_BIT = 1 << 2,
   OBD_INIT_BIT = 1 << 3,
   OBD_UPDATE_BIT = 1 << 4,
+  FET_ENABLE_BIT = 1 << 5,
+  FET_DISABLE_BIT = 1 << 6,
 };
 
 typedef enum
@@ -42,6 +44,7 @@ typedef struct BMSInfo_t
   float NTC[2];
   float CellVoltages[4];
   uint16_t CellDiff;
+  uint8_t stateFET;
   bool dischargeFET;
   bool chargeFET;
 } BMSInfo_t;
@@ -53,8 +56,11 @@ extern BMSInfo_t bmsInfo;
 void BMSStart();
 void intoCircularBuffer(uint8_t *pData, size_t length);
 void vBMSProcessTask(void *parameter);
+std::vector<uint8_t> basicRequest();
+std::vector<uint8_t> cellInfoRequest();
+std::vector<uint8_t> mosfetChargeCtrlRequest(bool charge);
 
-extern TaskHandle_t vOBD_Task_hdl, vTFT_Task_hdl, vBMSProcess_Task_hdl;
+extern TaskHandle_t vOBD_Task_hdl, vTFT_Task_hdl, vBMSProcess_Task_hdl, vBMS_Polling_hdl;
 void vOBD_Task(void *parameter);
 void vTFT_Task(void *parameter);
 #endif // _GLOBALS_H

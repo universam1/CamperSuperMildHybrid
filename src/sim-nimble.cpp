@@ -47,56 +47,80 @@ BLECharacteristic *m_pnpCharacteristic;                      // 0x2a50
 const uint8_t basicInfoRequest[] = {0xDD, 0xA5, 0x03, 0x00, 0xFF, 0xFD, 0x77};
 const uint8_t cellInfoRequest[] = {0xDD, 0xA5, 0x04, 0x00, 0xFF, 0xFC, 0x77};
 const uint8_t deviceInfoRequest[] = {0xDD, 0xA5, 0x05, 0x00, 0xFF, 0xFB, 0x77};
-const uint8_t testRequest[] = {0x11};
+const uint8_t mosfetRequest[] = {0xDD, 0x5A, 0xE1, 0x02, 0x00};
 
-uint8_t basicInfoResponse[] = {0xDD, 0x03, 0x00, 0x1B, 0x05, 0x1F, 0x00, 0x00, 0x59, 0x0F, 0x59, 0x10, 0x00, 0x00, 0x2A,
-                               0x9A, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x21, 0x64, 0x03, 0x04, 0x02, 0x0B, 0x0C, 0x0B,
-                               0x09, 0xFD, 0x73, 0x77};
+std::vector<uint8_t> basicInfoResponse = {0xDD, 0x03, 0x00, 0x1B, 0x05, 0x1F, 0x00, 0x00, 0x59, 0x0F, 0x59, 0x10, 0x00, 0x00, 0x2A,
+                                          0x9A, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x21, 0x64, 0x03, 0x04, 0x02, 0x0B, 0x0C, 0x0B,
+                                          0x09, 0xFD, 0x73, 0x77};
 
-uint8_t cellInfoResponse[] = {0xDD, 0x04, 0x00, 0x1E, 0x0F, 0x66, 0x0F, 0x63, 0x0F, 0x63, 0x0F, 0x64, 0x0F, 0x3E, 0x0F,
- 0x63, 0x0F, 0x37, 0x0F, 0x5B, 0x0F, 0x65, 0x0F, 0x3B, 0x0F, 0x63, 0x0F, 0x63, 0x0F, 0x3C, 0x0F, 0x66, 0x0F, 0x3D, 0xF9, 0xF9, 0x77};
+std::vector<uint8_t> cellInfoResponse = {0xDD, 0x04, 0x00, 0x1E, 0x0F, 0x66, 0x0F, 0x63, 0x0F, 0x63, 0x0F, 0x64, 0x0F, 0x3E, 0x0F,
+                                         0x63, 0x0F, 0x37, 0x0F, 0x5B, 0x0F, 0x65, 0x0F, 0x3B, 0x0F, 0x63, 0x0F, 0x63, 0x0F, 0x3C, 0x0F, 0x66, 0x0F, 0x3D, 0xF9, 0xF9, 0x77};
 
-uint8_t deviceInfoResponse[] = {0xDD, 0x05, 0x00, 0x19, 0x4A, 0x42, 0x44, 0x2D, 0x53, 0x50, 0x30, 0x34, 0x53, 0x30, 0x32,
-                                0x38, 0x2D, 0x4C, 0x34, 0x53, 0x2D, 0x31, 0x35, 0x30, 0x41, 0x2D, 0x42, 0x2D, 0x55, 0xFA,
-                                0x01, 0x77};
-uint8_t splitAt = 20;
+std::vector<uint8_t> deviceInfoResponse = {0xDD, 0x05, 0x00, 0x19, 0x4A, 0x42, 0x44, 0x2D, 0x53, 0x50, 0x30, 0x34, 0x53, 0x30, 0x32,
+                                           0x38, 0x2D, 0x4C, 0x34, 0x53, 0x2D, 0x31, 0x35, 0x30, 0x41, 0x2D, 0x42, 0x2D, 0x55, 0xFA,
+                                           0x01, 0x77};
 
 // [D][uart_debug:114]: >>> DD:A5:04:00:FF:FC:77
 // [D][uart_debug:114]: <<< DD:04:00:08:0F:23:0F:1C:0F:12:0F:1D:FF:4E:77
 // [D][uart_debug:114]: >>> DD:A5:03:00:FF:FD:77
 // [D][uart_debug:114]: <<< DD:03:00:1D:06:0B:00:00:01:ED:01:F4:00:00:2C:7C:00:00:00:00:10:00:80:63:02:04:03:0B:A0:0B:9D:0B:98:FA:55:77
 
-uint16_t calcChecksum(uint8_t *data, uint8_t len)
+void simlateBasicInfo()
+{
+  // voltage
+  uint16_t volt = random(1080, 1460);
+  basicInfoResponse[4] = volt >> 8;
+  basicInfoResponse[5] = volt >> 0;
+  // current
+  int16_t curr = random(-16000, 6000);
+  basicInfoResponse[6] = curr >> 8;
+  basicInfoResponse[7] = curr >> 0;
+
+  // ntc_temps
+  uint16_t ntc1 = random(2700, 3000);
+  basicInfoResponse[27] = ntc1 >> 8;
+  basicInfoResponse[28] = ntc1 >> 0;
+  uint16_t ntc2 = random(2700, 3000);
+  basicInfoResponse[29] = ntc2 >> 8;
+  basicInfoResponse[30] = ntc2 >> 0;
+}
+
+uint16_t calcChecksum(std::vector<uint8_t> *data)
 {
   uint16_t checksum = 0x00;
-  for (size_t i = 2; i < len-3; i++)
-    checksum = checksum - data[i];
+  for (size_t i = 2; i < data->size() - 3; i++)
+    checksum -= data->at(i);
 
   return checksum;
 }
-void addChecksum(uint8_t *data, uint8_t len)
-{
-  uint16_t checksum = calcChecksum(data, len);
 
-  data[len - 1 - 2] = checksum >> 8;
-  data[len - 1 - 1] = checksum >> 0;
+void addChecksum(std::vector<uint8_t> *data)
+{
+  uint16_t checksum = calcChecksum(data);
+
+  data->at(data->size() - 1 - 2) = checksum >> 8;
+  data->at(data->size() - 1 - 1) = checksum >> 0;
 }
 
-void sendChunked(BLECharacteristic *txChar, uint8_t *data, uint8_t len)
+void sendChunked(BLECharacteristic *txChar, std::vector<uint8_t> *data)
 {
-  addChecksum(data, len);
+  addChecksum(data);
+
   const uint8_t chunkSize = 20;
-  uint8_t chunks = len / chunkSize;
-  uint8_t lastChunkSize = len % chunkSize;
+  uint8_t chunks = data->size() / chunkSize;
+  uint8_t lastChunkSize = data->size() % chunkSize;
   uint8_t i = 0;
+  for (size_t i = 0; i < data->size(); i++)
+    Serial.printf("%02X ", data->at(i));
+  Serial.println();
   for (i = 0; i < chunks; i++)
   {
-    txChar->setValue(data + i * chunkSize, chunkSize);
+    txChar->setValue(data->data() + i * chunkSize, chunkSize);
     txChar->notify();
   }
   if (lastChunkSize > 0)
   {
-    txChar->setValue(data + i * chunkSize, lastChunkSize);
+    txChar->setValue(data->data() + i * chunkSize, lastChunkSize);
     txChar->notify();
   }
 }
@@ -118,17 +142,26 @@ class MyRXCallbacks : public BLECharacteristicCallbacks
     if (memcmp(rxValue, basicInfoRequest, len) == 0)
     {
       Serial.println("basic info request");
-      sendChunked(txChar, basicInfoResponse, sizeof(basicInfoResponse));
+      simlateBasicInfo();
+      sendChunked(txChar, &basicInfoResponse);
     }
     else if (memcmp(rxValue, cellInfoRequest, len) == 0)
     {
       Serial.println("cell info request");
-      sendChunked(txChar, cellInfoResponse, sizeof(cellInfoResponse));
+      sendChunked(txChar, &cellInfoResponse);
     }
     else if (memcmp(rxValue, deviceInfoRequest, len) == 0)
     {
       Serial.println("device info request");
-      sendChunked(txChar, deviceInfoResponse, sizeof(deviceInfoResponse));
+      sendChunked(txChar, &deviceInfoResponse);
+    }
+    else if (memcmp(rxValue, mosfetRequest, sizeof(mosfetRequest)) == 0)
+    {
+      Serial.println("mosfet request");
+      basicInfoResponse[24] ^= rxValue[5];
+
+      std::vector<uint8_t> r = {0xDD, 0xE1, 0x00, 0x00, 0x00, 0x00, 0x77};
+      sendChunked(txChar, &r);
     }
     else
     {
@@ -136,14 +169,9 @@ class MyRXCallbacks : public BLECharacteristicCallbacks
       if (len > 0)
       {
         Serial.println("********* unknown RX: ");
-
-        for (int i = 0; i < len; i++)
-        {
-          Serial.print(rxValue[i] < 16 ? "0" : "");
-          Serial.print(rxValue[i], HEX);
-          Serial.print(" ");
-        }
-        Serial.println("*********");
+        for (size_t i = 0; i < len; i++)
+          Serial.printf("%02X ", rxValue[i]);
+        Serial.println("\n*********");
       }
     }
   }

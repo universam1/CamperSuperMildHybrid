@@ -15,17 +15,6 @@
 #define BMS_REG_NAME 0x05
 #define BMS_REG_CTL_MOSFET 0xE1
 
-// State machine states
-#define BMS_STATE_WAIT_FOR_START_BYTE 0x00
-#define BMS_STATE_WAIT_FOR_STATUS_BYTE 0x01
-#define BMS_STATE_WAIT_FOR_CMD_CODE 0x02
-#define BMS_STATE_WAIT_FOR_LENGTH 0x03
-#define BMS_STATE_WAIT_FOR_DATA 0x04
-#define BMS_STATE_WAIT_FOR_CHECKSUM_MSB 0x05
-#define BMS_STATE_WAIT_FOR_CHECKSUM_LSB 0x06
-#define BMS_STATE_WAIT_FOR_STOP_BYTE 0x07
-#define BMS_STATE_ERROR 0xFF
-
 CircularBuffer<uint8_t, 120> rbuffer;
 TaskHandle_t vBMSProcess_Task_hdl;
 
@@ -42,6 +31,11 @@ void intoCircularBuffer(uint8_t *pData, size_t length)
   for (size_t i = 0; i < length; i++)
     rbuffer.push(pData[i]);
 
+  Serial.print("intoCircularBuffer: ");
+  for (size_t i = 0; i < length; i++)
+    Serial.printf("%02X ", pData[i]);
+  Serial.println();
+
   if (pData[length - 1] == BMS_STOPBYTE)
   {
     // we have a frame
@@ -53,8 +47,8 @@ void intoCircularBuffer(uint8_t *pData, size_t length)
 void handle_rx_0x03()
 {
 
-  bmsInfo.Voltage = ((uint16_t)(rbuffer[0] << 8) | rbuffer[1]) * 0.01; // 0-1   Total voltage
-  bmsInfo.Current = ((uint16_t)(rbuffer[2] << 8) | rbuffer[3]) * 0.01; // 2-3   Current
+  bmsInfo.Voltage = ((uint16_t)rbuffer[0] << 8 | rbuffer[1]) * 0.01; // 0-1   Total voltage
+  bmsInfo.Current = ((int16_t)rbuffer[2] << 8 | (int16_t)rbuffer[3]) * 0.01; // 2-3   Current
   bmsInfo.Power = bmsInfo.Voltage * bmsInfo.Current;
   // bmsInfo.balance_capacity = (uint16_t)(rbuffer[4] << 8) | (uint16_t)(rbuffer[5]);    // 4-5   Balance capacity
   // bmsInfo.rate_capacity = (uint16_t)(rbuffer[6] << 8) | (uint16_t)(rbuffer[7]);       // 6-7   Rate capacity
@@ -83,6 +77,7 @@ void handle_rx_0x03()
   //   bmsInfo.mosfet_status    = rbuffer[20];  // 20    MOSFET status
   // m_0x03_basic_info.num_cells        = m_rx_data[21];  // 21    # of batteries in series
   // m_0x03_basic_info.num_ntcs         = m_rx_data[22];  // 22    # of NTCs
+  bmsInfo.stateFET = rbuffer[20];
   bmsInfo.dischargeFET = (rbuffer[20] >> 1) & 1;
   bmsInfo.chargeFET = rbuffer[20] & 1;
 
@@ -110,21 +105,7 @@ void handle_rx_0x04()
   log_i("Cell voltages: %.3fV %.3fV %.3fV %.3fV diff: %dmV",
         bmsInfo.CellVoltages[0], bmsInfo.CellVoltages[1], bmsInfo.CellVoltages[2], bmsInfo.CellVoltages[3], bmsInfo.CellDiff);
 }
-// uint16_t calcChecksum(uint8_t *data, uint8_t len)
-// {
-//   uint16_t checksum = 0x00;
-//   for (size_t i = 0; i < len; i++)
-//     checksum = checksum - data[i];
 
-//   return checksum;
-// }
-// void addChecksum(uint8_t *data, uint8_t len)
-// {
-//   uint16_t checksum = calcChecksum(data, len);
-
-//   data[len - 1 - 2] = (uint8_t)((checksum >> 8) & 0xFF);
-//   data[len - 1 - 1] = (uint8_t)(checksum & 0xFF);
-// }
 void BMSProcessFrame()
 {
   // find starting byte, flush
@@ -220,4 +201,61 @@ void vBMSProcessTask(void *parameter)
     BMSProcessFrame();
   }
   vTaskDelete(NULL);
+}
+
+uint16_t calcChecksum(std::vector<uint8_t> *data)
+{
+  uint16_t checksum = 0x00;
+  for (size_t i = 2; i < data->size() - 3; i++)
+    checksum -= data->at(i);
+
+  return checksum;
+}
+
+void addChecksum(std::vector<uint8_t> *data)
+{
+  uint16_t checksum = calcChecksum(data);
+
+  data->at(data->size() - 1 - 2) = checksum >> 8;
+  data->at(data->size() - 1 - 1) = checksum >> 0;
+}
+
+// header status command length data calcChecksum footer
+//   DD     A5      03     00    FF     FD      77
+// uint8_t basicRequest[] = {0xdd, 0xa5, 0x3, 0x0, 0xff, 0xfd, 0x77};
+// uint8_t cellInfoRequest[] = {0xdd, 0xa5, 0x4, 0x0, 0xff, 0xfc, 0x77};
+
+std::vector<uint8_t> basicRequest()
+{
+  std::vector<uint8_t> r = {BMS_STARTBYTE, BMS_READ, BMS_REG_BASIC_SYSTEM_INFO, 0, 0x0, 0x0, BMS_STOPBYTE};
+  addChecksum(&r);
+  log_d("%02X %02X %02X %02X %02X %02X %02X",
+        r[0], r[1], r[2], r[3], r[4], r[5], r[6]);
+  return r;
+}
+
+std::vector<uint8_t> cellInfoRequest()
+{
+  std::vector<uint8_t> r = {BMS_STARTBYTE, BMS_READ, BMS_REG_CELL_VOLTAGES, 0, 0x0, 0x0, BMS_STOPBYTE};
+  addChecksum(&r);
+  log_d("%02X %02X %02X %02X %02X %02X %02X",
+        r[0], r[1], r[2], r[3], r[4], r[5], r[6]);
+  return r;
+}
+
+// DD 5A E1 02 00 02 FF 1B 77, it means software shutdown discharging MOS.
+std::vector<uint8_t> mosfetChargeCtrlRequest(bool charge)
+{
+  std::vector<uint8_t> r = {BMS_STARTBYTE, BMS_WRITE, BMS_REG_CTL_MOSFET, 2, 0x0, 0x0, 0x0, 0x0, BMS_STOPBYTE};
+  uint8_t state = bmsInfo.stateFET;
+
+  if (charge)
+    state &= 0b10;
+  else
+    state |= 0b01;
+  r[5] = state;
+  addChecksum(&r);
+  log_d("%02X %02X %02X %02X %02X %02X %02X %02X %02X",
+        r[0], r[1], r[2], r[3], r[4], r[5], r[6], r[7], r[8]);
+  return r;
 }

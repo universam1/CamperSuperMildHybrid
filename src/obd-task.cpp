@@ -105,7 +105,8 @@ void vOBD_Task(void *parameter)
       auto val = myELM327.engineLoad();
       if (myELM327.nb_rx_state == ELM_SUCCESS)
 #else
-      auto val = random(0, 100);
+      auto v = random(-50, 100);
+      auto val = (v < 0) ? 0 : v;
 #endif
       {
         obdData.load = val;
