@@ -73,8 +73,9 @@ void simlateBasicInfo()
   basicInfoResponse[5] = volt >> 0;
   // current
   int16_t curr = random(-16000, 6000);
-  basicInfoResponse[6] = curr >> 8;
-  basicInfoResponse[7] = curr >> 0;
+  unsigned char *bytePtr=(unsigned char*)&curr;
+  basicInfoResponse[6] = bytePtr[0];
+  basicInfoResponse[7] = bytePtr[1];
 
   // ntc_temps
   uint16_t ntc1 = random(2700, 3000);
@@ -158,7 +159,8 @@ class MyRXCallbacks : public BLECharacteristicCallbacks
     else if (memcmp(rxValue, mosfetRequest, sizeof(mosfetRequest)) == 0)
     {
       Serial.println("mosfet request");
-      basicInfoResponse[24] ^= rxValue[5];
+
+      basicInfoResponse[24] = rxValue[5] & 0b01 ? 0b10 : 0b11;
 
       std::vector<uint8_t> r = {0xDD, 0xE1, 0x00, 0x00, 0x00, 0x00, 0x77};
       sendChunked(txChar, &r);
