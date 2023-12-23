@@ -8,6 +8,9 @@
 
 #define myName "SmartHybrid"
 
+#define BMS_UPDATE_DELAY 100 // milliseconds
+#define BMS_CELL_INFO_DELAY 250
+
 enum NotificationBits
 {
   BMS_INIT_BIT = 1 << 0,
@@ -50,8 +53,8 @@ typedef struct BMSInfo_t
 } BMSInfo_t;
 
 extern OBDdata_t obdData;
-
 extern BMSInfo_t bmsInfo;
+extern TickType_t xBmsRequestLastCall;
 
 void BMSStart();
 void intoCircularBuffer(uint8_t *pData, size_t length);

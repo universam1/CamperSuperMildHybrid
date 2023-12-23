@@ -2,7 +2,7 @@
 #include <BLEDevice.h>
 
 // #define SIMULATE_BMS
-#define POLLING_INTERVAL_MS 300
+#define POLLING_INTERVAL_MS 3000 // failure case
 BMSInfo_t bmsInfo;
 
 TaskHandle_t vBMS_Task_hdl, vBMS_Scan_hdl, vBMS_Polling_hdl;
@@ -43,14 +43,14 @@ class MyClientCallback : public BLEClientCallbacks
 {
   void onConnect(BLEClient *pclient)
   {
-    log_d("onConnect");
-    // vTaskSuspend(vBMS_Scan_hdl);
+    log_d("resume polling");
     vTaskResume(vBMS_Polling_hdl);
+    xTaskNotify(vBMS_Polling_hdl, NotificationBits::BMS_UPDATE_BIT, eSetBits); // start poll
   }
 
   void onDisconnect(BLEClient *pclient)
   {
-    log_d("onDisconnect");
+    log_d("disabling polling");
     bmsDevice = nullptr;
     vTaskSuspend(vBMS_Polling_hdl);
   }
@@ -148,23 +148,22 @@ void vBMS_Polling(void *parameter)
     // mosfet control has priority, using notifcation as regular poll delay
     uint32_t ulNotifiedValue;
     std::vector<uint8_t> val;
-    if (xTaskNotifyWait(pdFALSE, ULONG_MAX, &ulNotifiedValue, pdMS_TO_TICKS(POLLING_INTERVAL_MS)) == pdPASS)
+
+    // wait for notification trigger
+    if (xTaskNotifyWait(pdFALSE, ULONG_MAX, &ulNotifiedValue, pdMS_TO_TICKS(POLLING_INTERVAL_MS)) == pdFAIL) {
+      log_e("no notification for BMS request, timeout, restart");
+      // continue;
+    }
+
+    if (ulNotifiedValue & NotificationBits::FET_ENABLE_BIT)
     {
-      if (ulNotifiedValue & NotificationBits::FET_ENABLE_BIT)
-      {
-        log_i("FET enable received");
-        val = mosfetChargeCtrlRequest(true);
-      }
-      else if (ulNotifiedValue & NotificationBits::FET_DISABLE_BIT)
-      {
-        log_i("FET disable received");
-        val = mosfetChargeCtrlRequest(false);
-      }
-      else
-      {
-        log_e("Unknown notification received: %d", ulNotifiedValue);
-        continue;
-      }
+      log_i("FET enable received");
+      val = mosfetChargeCtrlRequest(true);
+    }
+    else if (ulNotifiedValue & NotificationBits::FET_DISABLE_BIT)
+    {
+      log_i("FET disable received");
+      val = mosfetChargeCtrlRequest(false);
     }
     else if (++idx % 4)
       val = basicRequest();
@@ -181,7 +180,6 @@ void vBMS_Scan(void *parameter)
   BLEDevice::init(myName);
   log_d("vBMS_Scan: %d", xPortGetCoreID());
   pClient = BLEDevice::createClient();
-  BLEClient *pClient = BLEDevice::createClient();
   log_d(" - Created client");
   pClient->setClientCallbacks(new MyClientCallback());
 
@@ -196,7 +194,7 @@ void vBMS_Scan(void *parameter)
     if (connectToServer())
     {
       log_d("connected to the BLE Server.");
-      vTaskResume(vBMS_Polling_hdl);
+      // vTaskResume(vBMS_Polling_hdl);
       vTaskDelay(pdMS_TO_TICKS(1000));
       continue;
     }

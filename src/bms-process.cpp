@@ -17,6 +17,7 @@
 
 CircularBuffer<uint8_t, 120> rbuffer;
 TaskHandle_t vBMSProcess_Task_hdl;
+ TickType_t xBmsRequestLastCall;
 
 typedef struct
 {
@@ -31,10 +32,10 @@ void intoCircularBuffer(uint8_t *pData, size_t length)
   for (size_t i = 0; i < length; i++)
     rbuffer.push(pData[i]);
 
-  Serial.print("intoCircularBuffer: ");
-  for (size_t i = 0; i < length; i++)
-    Serial.printf("%02X ", pData[i]);
-  Serial.println();
+  // Serial.print("intoCircularBuffer: ");
+  // for (size_t i = 0; i < length; i++)
+  //   Serial.printf("%02X ", pData[i]);
+  // Serial.println();
 
   if (pData[length - 1] == BMS_STOPBYTE)
   {
@@ -47,7 +48,7 @@ void intoCircularBuffer(uint8_t *pData, size_t length)
 void handle_rx_0x03()
 {
 
-  bmsInfo.Voltage = ((uint16_t)rbuffer[0] << 8 | rbuffer[1]) * 0.01; // 0-1   Total voltage
+  bmsInfo.Voltage = ((uint16_t)rbuffer[0] << 8 | rbuffer[1]) * 0.01;         // 0-1   Total voltage
   bmsInfo.Current = ((int16_t)rbuffer[2] << 8 | (int16_t)rbuffer[3]) * 0.01; // 2-3   Current
   bmsInfo.Power = bmsInfo.Voltage * bmsInfo.Current;
   // bmsInfo.balance_capacity = (uint16_t)(rbuffer[4] << 8) | (uint16_t)(rbuffer[5]);    // 4-5   Balance capacity
@@ -171,11 +172,16 @@ void BMSProcessFrame()
   case BMS_REG_BASIC_SYSTEM_INFO:
     handle_rx_0x03();
     xTaskNotify(vTFT_Task_hdl, NotificationBits::BMS_UPDATE_BIT, eSetBits);
+      xBmsRequestLastCall= xTaskGetTickCount ();
     break;
 
   case BMS_REG_CELL_VOLTAGES:
     handle_rx_0x04();
     xTaskNotify(vTFT_Task_hdl, NotificationBits::CELL_UPDATE_BIT, eSetBits);
+    break;
+
+  case BMS_REG_CTL_MOSFET:
+    log_d("MOSFET status: %02X", rbuffer[1]);
     break;
 
   default:
@@ -199,6 +205,11 @@ void vBMSProcessTask(void *parameter)
       continue;
     log_d("start processing frame");
     BMSProcessFrame();
+
+    // next poll, grace period
+    vTaskDelay(pdMS_TO_TICKS(BMS_UPDATE_DELAY));
+    vTaskDelayUntil(&bmsUpdateCouter, pdMS_TO_TICKS(BMS_UPDATE_DELAY));
+    xTaskNotify(vBMS_Polling_hdl, NotificationBits::BMS_UPDATE_BIT, eSetBits); // next poll
   }
   vTaskDelete(NULL);
 }
@@ -247,7 +258,7 @@ std::vector<uint8_t> cellInfoRequest()
 std::vector<uint8_t> mosfetChargeCtrlRequest(bool charge)
 {
   std::vector<uint8_t> r = {BMS_STARTBYTE, BMS_WRITE, BMS_REG_CTL_MOSFET, 2, 0x0, 0x0, 0x0, 0x0, BMS_STOPBYTE};
-  uint8_t state =0;
+  uint8_t state = 0;
 
   if (charge)
     state = 0b00;

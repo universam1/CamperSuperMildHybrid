@@ -14,7 +14,6 @@ TaskHandle_t vTFT_Task_hdl;
 #define OLED_SCL 4
 
 Adafruit_SSD1306 tft(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire);
-uint32_t bmsUpdateCouter = 0;
 void drawProgressbar(int x, int y, int width, int height, int progress)
 {
   progress = constrain(progress, 0, 100);
@@ -47,7 +46,7 @@ void manageCharging()
   // prevent race condition with bms update
   if (lastBmsUpdateCouter == bmsUpdateCouter)
   {
-    log_i("No BMS update since last OBD update");
+    log_w("No BMS update since last OBD update");
     return;
   }
 
@@ -56,30 +55,30 @@ void manageCharging()
   {
     // hysterese
     if (obdData.load > 20 && millis() - lastCoasting > 1000)
-    {
       log_i("Disabling charging delayed");
-      xTaskNotify(vBMS_Polling_hdl, NotificationBits::FET_DISABLE_BIT, eSetBits);
-      lastBmsUpdateCouter = bmsUpdateCouter;
-      tft.invertDisplay(false);
-    }
+
     else if (obdData.load > 50)
-    {
       log_i("Disabling charging forced");
-      xTaskNotify(vBMS_Polling_hdl, NotificationBits::FET_DISABLE_BIT, eSetBits);
-      lastBmsUpdateCouter = bmsUpdateCouter;
-      tft.invertDisplay(false);
-    }
+
+    else
+      return;
+
+    xTaskNotify(vBMS_Polling_hdl, NotificationBits::FET_DISABLE_BIT, eSetBits);
+    lastBmsUpdateCouter = bmsUpdateCouter;
   }
   else
-  // start charging if load is below 20% and charging is not enabled
   {
+    // start charging if load is below 20% and charging is not enabled
     if (obdData.coasting)
-    {
       log_i("Enabling charging");
-      xTaskNotify(vBMS_Polling_hdl, NotificationBits::FET_ENABLE_BIT, eSetBits);
-      lastBmsUpdateCouter = bmsUpdateCouter;
-      tft.invertDisplay(true);
-    }
+    // motor shutdown, enable the charge FET
+    else if (obdData.rpm == 0)
+      log_i("motor shutdown, re-enable the charge FET");
+    else
+      return;
+
+    xTaskNotify(vBMS_Polling_hdl, NotificationBits::FET_ENABLE_BIT, eSetBits);
+    lastBmsUpdateCouter = bmsUpdateCouter;
   }
 }
 
@@ -139,7 +138,7 @@ void vTFT_Task(void *parameter)
       if (ulNotifiedValue & NotificationBits::BMS_UPDATE_BIT)
       {
         log_d("BMS update received");
-        bmsUpdateCouter++;
+        tft.invertDisplay(bmsInfo.chargeFET); // invert display if charging
         tft.setTextSize(2);
         tft.setCursor(70, 0);
         tft.printf("%2.2fV", (bmsInfo.Voltage));
@@ -183,6 +182,7 @@ void vTFT_Task(void *parameter)
     {
       log_e("Did not receive a notification within the expected time.");
       tft.clearDisplay();
+      tft.invertDisplay(false);
       tft.setCursor(0, SCREEN_HEIGHT / 2);
       tft.print("Offline");
       tft.display();
