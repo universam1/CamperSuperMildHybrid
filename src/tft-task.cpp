@@ -37,14 +37,14 @@ String formatPower(float power, uint8_t precision)
 
 void manageCharging()
 {
-  static uint32_t lastCoasting = 0;
-  static uint32_t lastBmsUpdateCouter = 0;
+  static TickType_t xlastCoasting = 0;
+  static TickType_t xlastBmsUpdate = 0;
 
   if (obdData.coasting)
-    lastCoasting = millis();
+    xlastCoasting = bmsInfo.xLastUpdateTime;
 
   // prevent race condition with bms update
-  if (lastBmsUpdateCouter == bmsUpdateCouter)
+  if (xlastBmsUpdate == bmsInfo.xLastUpdateTime)
   {
     log_w("No BMS update since last OBD update");
     return;
@@ -54,7 +54,7 @@ void manageCharging()
   if (bmsInfo.chargeFET)
   {
     // hysterese
-    if (obdData.load > 20 && millis() - lastCoasting > 1000)
+    if (obdData.load > 20 && xTaskGetTickCount() - xlastCoasting > pdMS_TO_TICKS(1000))
       log_i("Disabling charging delayed");
 
     else if (obdData.load > 50)
@@ -64,7 +64,7 @@ void manageCharging()
       return;
 
     xTaskNotify(vBMS_Polling_hdl, NotificationBits::FET_DISABLE_BIT, eSetBits);
-    lastBmsUpdateCouter = bmsUpdateCouter;
+    xlastBmsUpdate = bmsInfo.xLastUpdateTime;
   }
   else
   {
@@ -78,7 +78,7 @@ void manageCharging()
       return;
 
     xTaskNotify(vBMS_Polling_hdl, NotificationBits::FET_ENABLE_BIT, eSetBits);
-    lastBmsUpdateCouter = bmsUpdateCouter;
+    xlastBmsUpdate = bmsInfo.xLastUpdateTime;
   }
 }
 

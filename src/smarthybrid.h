@@ -8,8 +8,9 @@
 
 #define myName "SmartHybrid"
 
-#define BMS_UPDATE_DELAY 100 // milliseconds
-#define BMS_CELL_INFO_DELAY 250
+#define BMS_UPDATE_DELAY 50 // milliseconds
+#define BMS_BASIC_INFO_DELAY 250
+#define BMS_CELL_INFO_DELAY 1000
 
 enum NotificationBits
 {
@@ -36,6 +37,7 @@ typedef struct OBDdata_t
   uint16_t rpm;
   uint16_t speed;
   uint8_t load;
+  TickType_t xLastUpdateTime;
   bool coasting;
 } OBDdata_t;
 
@@ -46,6 +48,7 @@ typedef struct BMSInfo_t
   float Power;
   float NTC[2];
   float CellVoltages[4];
+  TickType_t xLastUpdateTime;
   uint16_t CellDiff;
   uint8_t stateFET;
   bool dischargeFET;

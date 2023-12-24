@@ -2,7 +2,6 @@
 #include <BLEDevice.h>
 
 // #define SIMULATE_BMS
-#define POLLING_INTERVAL_MS 3000 // failure case
 BMSInfo_t bmsInfo;
 
 TaskHandle_t vBMS_Task_hdl, vBMS_Scan_hdl, vBMS_Polling_hdl;
@@ -131,46 +130,78 @@ bool connectToServer()
   return true;
 }
 
+void writeValue(std::vector<uint8_t> val)
+{
+  if (pTxRemoteCharacteristic == nullptr)
+  {
+    log_e("Remote TX characteristic unavailable");
+    vTaskDelay(pdMS_TO_TICKS(1000));
+    return;
+  }
+  pTxRemoteCharacteristic->writeValue(val.data(), val.size());
+  // graceperiod for BMS to process
+  vTaskDelay(pdMS_TO_TICKS(BMS_UPDATE_DELAY));
+}
+
+void vBasicInfoPollIntervaller(void *parameter)
+{
+  TickType_t xLastWakeTime = xTaskGetTickCount();
+  while (true)
+  {
+    vTaskDelayUntil(&xLastWakeTime, pdMS_TO_TICKS(BMS_BASIC_INFO_DELAY));
+    xTaskNotify(vBMS_Polling_hdl, NotificationBits::BMS_UPDATE_BIT, eSetBits); // start poll
+  }
+}
+
+void vCellInfoPollIntervaller(void *parameter)
+{
+  TickType_t xLastWakeTime = xTaskGetTickCount();
+  while (true)
+  {
+    vTaskDelayUntil(&xLastWakeTime, pdMS_TO_TICKS(BMS_CELL_INFO_DELAY));
+    xTaskNotify(vBMS_Polling_hdl, NotificationBits::CELL_UPDATE_BIT, eSetBits); // start poll
+  }
+}
+
 void vBMS_Polling(void *parameter)
 {
   vTaskSuspend(NULL); // suspend self until connected
-  byte idx = 0;
+  xTaskCreatePinnedToCore(vBasicInfoPollIntervaller, "BASICPOLLER", 5000, NULL, 2, NULL, tskNO_AFFINITY);
+  xTaskCreatePinnedToCore(vCellInfoPollIntervaller, "CELLPOLLER", 5000, NULL, 2, NULL, tskNO_AFFINITY);
+
   while (true)
   {
-    // safety check.
-    if (pTxRemoteCharacteristic == nullptr)
-    {
-      log_e("Remote TX characteristic unavailable");
-      vTaskDelay(pdMS_TO_TICKS(3000));
-      continue;
-    }
-
-    // mosfet control has priority, using notifcation as regular poll delay
     uint32_t ulNotifiedValue;
-    std::vector<uint8_t> val;
-
     // wait for notification trigger
-    if (xTaskNotifyWait(pdFALSE, ULONG_MAX, &ulNotifiedValue, pdMS_TO_TICKS(POLLING_INTERVAL_MS)) == pdFAIL) {
+    if (xTaskNotifyWait(pdFALSE, ULONG_MAX, &ulNotifiedValue, portMAX_DELAY) == pdFAIL)
+    {
       log_e("no notification for BMS request, timeout, restart");
-      // continue;
+      continue;
     }
 
     if (ulNotifiedValue & NotificationBits::FET_ENABLE_BIT)
     {
       log_i("FET enable received");
-      val = mosfetChargeCtrlRequest(true);
+      writeValue(mosfetChargeCtrlRequest(true));
     }
-    else if (ulNotifiedValue & NotificationBits::FET_DISABLE_BIT)
+    if (ulNotifiedValue & NotificationBits::FET_DISABLE_BIT)
     {
       log_i("FET disable received");
-      val = mosfetChargeCtrlRequest(false);
+      writeValue(mosfetChargeCtrlRequest(false));
     }
-    else if (++idx % 4)
-      val = basicRequest();
-    else
-      val = cellInfoRequest();
+    if (ulNotifiedValue & NotificationBits::BMS_UPDATE_BIT)
+    {
+      log_i("BMS update received");
+      writeValue(basicRequest());
+    }
+    if (ulNotifiedValue & NotificationBits::CELL_UPDATE_BIT)
+    {
+      log_i("BMS cellinfo received");
+      writeValue(cellInfoRequest());
+    }
 
-    pTxRemoteCharacteristic->writeValue(val.data(), val.size());
+    else
+      log_e("no notification for BMS request");
   }
   vTaskDelete(NULL);
 }
@@ -215,8 +246,8 @@ void vBMS_Scan(void *parameter)
 
 void BMSStart()
 {
-  xTaskCreatePinnedToCore(vBMS_Scan, "SCAN", 5000, NULL, 2, &vBMS_Scan_hdl, 0);
+  xTaskCreatePinnedToCore(vBMS_Scan, "SCAN", 5000, NULL, 2, &vBMS_Scan_hdl, tskNO_AFFINITY);
+  xTaskCreatePinnedToCore(vBMS_Polling, "POLL", 5000, NULL, 3, &vBMS_Polling_hdl, tskNO_AFFINITY);
+  xTaskCreatePinnedToCore(vBMSProcessTask, "BMSProcess", 5000, NULL, 3, &vBMSProcess_Task_hdl, tskNO_AFFINITY);
   xTaskNotify(vTFT_Task_hdl, NotificationBits::BMS_INIT_BIT, eSetBits);
-  xTaskCreatePinnedToCore(vBMS_Polling, "POLL", 5000, NULL, 2, &vBMS_Polling_hdl, tskNO_AFFINITY);
-  xTaskCreatePinnedToCore(vBMSProcessTask, "BMSProcess", 5000, NULL, 2, &vBMSProcess_Task_hdl, tskNO_AFFINITY);
 }

@@ -112,6 +112,7 @@ void vOBD_Task(void *parameter)
         obdData.load = val;
         obdData.coasting = (obdData.rpm > 0 && obdData.load == 0);
         log_i("RPM: %d   Load: %d   Coasting: %d", obdData.rpm, obdData.load, obdData.coasting);
+        obdData.xLastUpdateTime = xTaskGetTickCount();
         xTaskNotify(vTFT_Task_hdl, NotificationBits::OBD_UPDATE_BIT, eSetBits);
         state++;
       }

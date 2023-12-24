@@ -17,7 +17,7 @@
 
 CircularBuffer<uint8_t, 120> rbuffer;
 TaskHandle_t vBMSProcess_Task_hdl;
- TickType_t xBmsRequestLastCall;
+TickType_t xBmsRequestLastCall;
 
 typedef struct
 {
@@ -90,6 +90,7 @@ void handle_rx_0x03()
   }
   log_i("BMS Info: %.2fV %.2fA %.2fW %.1fC %.1fC C:%d D:%d",
         bmsInfo.Voltage, bmsInfo.Current, bmsInfo.Power, bmsInfo.NTC[0], bmsInfo.NTC[1], bmsInfo.chargeFET, bmsInfo.dischargeFET);
+  bmsInfo.xLastUpdateTime = xTaskGetTickCount();
 }
 
 void handle_rx_0x04()
@@ -172,7 +173,7 @@ void BMSProcessFrame()
   case BMS_REG_BASIC_SYSTEM_INFO:
     handle_rx_0x03();
     xTaskNotify(vTFT_Task_hdl, NotificationBits::BMS_UPDATE_BIT, eSetBits);
-      xBmsRequestLastCall= xTaskGetTickCount ();
+    xBmsRequestLastCall = xTaskGetTickCount();
     break;
 
   case BMS_REG_CELL_VOLTAGES:
@@ -205,11 +206,6 @@ void vBMSProcessTask(void *parameter)
       continue;
     log_d("start processing frame");
     BMSProcessFrame();
-
-    // next poll, grace period
-    vTaskDelay(pdMS_TO_TICKS(BMS_UPDATE_DELAY));
-    vTaskDelayUntil(&bmsUpdateCouter, pdMS_TO_TICKS(BMS_UPDATE_DELAY));
-    xTaskNotify(vBMS_Polling_hdl, NotificationBits::BMS_UPDATE_BIT, eSetBits); // next poll
   }
   vTaskDelete(NULL);
 }
