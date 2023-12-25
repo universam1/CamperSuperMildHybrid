@@ -56,7 +56,7 @@ typedef struct BMSInfo_t
 
 extern OBDdata_t obdData;
 extern BMSInfo_t bmsInfo;
-extern TickType_t xBmsRequestLastCall;
+extern TickType_t xBmsLastMsg;
 
 void BMSStart();
 void intoCircularBuffer(uint8_t *pData, size_t length);

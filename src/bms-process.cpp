@@ -17,7 +17,7 @@
 
 CircularBuffer<uint8_t, 120> rbuffer;
 TaskHandle_t vBMSProcess_Task_hdl;
-TickType_t xBmsRequestLastCall;
+TickType_t xBmsLastMsg;
 
 typedef struct
 {
@@ -48,7 +48,7 @@ void intoCircularBuffer(uint8_t *pData, size_t length)
 void handle_rx_0x03()
 {
 
-  bmsInfo.Voltage = ((uint16_t)rbuffer[0] << 8 | rbuffer[1]) * 0.01f; // 0-1   Total voltage
+  bmsInfo.Voltage = ((uint16_t)rbuffer[0] << 8 | rbuffer[1]) * 0.01f;            // 0-1   Total voltage
   bmsInfo.Current = ((int16_t)((uint16_t)rbuffer[2] << 8 | rbuffer[3])) * 0.01f; // 2-3   Current
   bmsInfo.Power = bmsInfo.Voltage * bmsInfo.Current;
   // bmsInfo.balance_capacity = (uint16_t)(rbuffer[4] << 8) | (uint16_t)(rbuffer[5]);    // 4-5   Balance capacity
@@ -173,7 +173,7 @@ void BMSProcessFrame()
   case BMS_REG_BASIC_SYSTEM_INFO:
     handle_rx_0x03();
     xTaskNotify(vTFT_Task_hdl, NotificationBits::BMS_UPDATE_BIT, eSetBits);
-    xBmsRequestLastCall = xTaskGetTickCount();
+    xBmsLastMsg = xTaskGetTickCount();
     break;
 
   case BMS_REG_CELL_VOLTAGES:
@@ -191,9 +191,12 @@ void BMSProcessFrame()
   }
 
   // remove the frame from the buffer
-  while (rbuffer.shift() != BMS_STOPBYTE && !rbuffer.isEmpty())
-  {
-  }
+  for (size_t i = 0; i < header.dataLen + 3; i++)
+    rbuffer.shift();
+
+  // process further frames
+  if (rbuffer.size() > 27)
+    xTaskNotify(vBMSProcess_Task_hdl, 0, eNoAction);
 
   return;
 }
