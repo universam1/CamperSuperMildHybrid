@@ -65,7 +65,7 @@ void setup()
   Serial.begin(115200);
   Serial.printf("booting %d", __COUNTER__);
 
-  xTaskCreatePinnedToCore(vTFT_Task, "TFT", 5000, NULL, 2, &vTFT_Task_hdl, tskNO_AFFINITY);
+  xTaskCreatePinnedToCore(vTFT_Task, "TFT", 5000, NULL, 6, &vTFT_Task_hdl, tskNO_AFFINITY);
   BMSStart();
   xTaskCreatePinnedToCore(vOBD_Task, "OBD", 5000, NULL, 4, &vOBD_Task_hdl, tskNO_AFFINITY);
 

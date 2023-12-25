@@ -166,7 +166,7 @@ void vCellInfoPollIntervaller(void *parameter)
 void vBMS_Polling(void *parameter)
 {
   vTaskSuspend(NULL); // suspend self until connected
-  xTaskCreatePinnedToCore(vBasicInfoPollIntervaller, "BASICPOLLER", 5000, NULL, 2, NULL, tskNO_AFFINITY);
+  xTaskCreatePinnedToCore(vBasicInfoPollIntervaller, "BASICPOLLER", 5000, NULL, 3, NULL, tskNO_AFFINITY);
   xTaskCreatePinnedToCore(vCellInfoPollIntervaller, "CELLPOLLER", 5000, NULL, 2, NULL, tskNO_AFFINITY);
 
   while (true)
@@ -253,8 +253,8 @@ void vBMS_Scan(void *parameter)
 
 void BMSStart()
 {
-  xTaskCreatePinnedToCore(vBMS_Scan, "SCAN", 5000, NULL, 2, &vBMS_Scan_hdl, tskNO_AFFINITY);
-  xTaskCreatePinnedToCore(vBMS_Polling, "POLL", 5000, NULL, 3, &vBMS_Polling_hdl, tskNO_AFFINITY);
-  xTaskCreatePinnedToCore(vBMSProcessTask, "BMSProcess", 5000, NULL, 3, &vBMSProcess_Task_hdl, tskNO_AFFINITY);
+  xTaskCreatePinnedToCore(vBMS_Scan, "SCAN", 5000, NULL, 1, &vBMS_Scan_hdl, tskNO_AFFINITY);
+  xTaskCreatePinnedToCore(vBMS_Polling, "POLL", 5000, NULL, 4, &vBMS_Polling_hdl, tskNO_AFFINITY);
+  xTaskCreatePinnedToCore(vBMSProcessTask, "BMSProcess", 5000, NULL, 5, &vBMSProcess_Task_hdl, tskNO_AFFINITY);
   xTaskNotify(vTFT_Task_hdl, NotificationBits::BMS_INIT_BIT, eSetBits);
 }
