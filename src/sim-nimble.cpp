@@ -22,7 +22,7 @@ class MyServerCallbacks : public BLEServerCallbacks
 
   void onDisconnect(BLEServer *pServer)
   {
-    Serial.println("disconnect");
+    log_i("disconnect");
     deviceConnected = false;
   }
 };
@@ -73,9 +73,8 @@ void simlateBasicInfo()
   basicInfoResponse[5] = volt >> 0;
   // current
   int16_t curr = random(-16000, 6000);
-  unsigned char *bytePtr=(unsigned char*)&curr;
-  basicInfoResponse[6] = bytePtr[0];
-  basicInfoResponse[7] = bytePtr[1];
+  basicInfoResponse[6] = curr >> 8;
+  basicInfoResponse[7] = curr >> 0;
 
   // ntc_temps
   uint16_t ntc1 = random(2700, 3000);
@@ -113,7 +112,7 @@ void sendChunked(BLECharacteristic *txChar, std::vector<uint8_t> *data)
   uint8_t i = 0;
   for (size_t i = 0; i < data->size(); i++)
     Serial.printf("%02X ", data->at(i));
-  Serial.println();
+  log_i();
   for (i = 0; i < chunks; i++)
   {
     txChar->setValue(data->data() + i * chunkSize, chunkSize);
@@ -136,29 +135,29 @@ class MyRXCallbacks : public BLECharacteristicCallbacks
     BLECharacteristic *txChar = pServer->getServiceByUUID(serviceUUID)->getCharacteristic(charUUID_tx);
     if (txChar == NULL)
     {
-      Serial.println("txChar not found");
+      log_i("txChar not found");
       return;
     }
 
     if (memcmp(rxValue, basicInfoRequest, len) == 0)
     {
-      Serial.println("basic info request");
+      log_i("basic info request");
       simlateBasicInfo();
       sendChunked(txChar, &basicInfoResponse);
     }
     else if (memcmp(rxValue, cellInfoRequest, len) == 0)
     {
-      Serial.println("cell info request");
+      log_i("cell info request");
       sendChunked(txChar, &cellInfoResponse);
     }
     else if (memcmp(rxValue, deviceInfoRequest, len) == 0)
     {
-      Serial.println("device info request");
+      log_i("device info request");
       sendChunked(txChar, &deviceInfoResponse);
     }
     else if (memcmp(rxValue, mosfetRequest, sizeof(mosfetRequest)) == 0)
     {
-      Serial.println("mosfet request");
+      log_i("mosfet request");
 
       basicInfoResponse[24] = rxValue[5] & 0b01 ? 0b10 : 0b11;
 
@@ -170,10 +169,12 @@ class MyRXCallbacks : public BLECharacteristicCallbacks
 
       if (len > 0)
       {
-        Serial.println("********* unknown RX: ");
+        log_i("********* unknown RX: ");
+#if ARDUHAL_LOG_LEVEL >= ARDUHAL_LOG_LEVEL_INFO
         for (size_t i = 0; i < len; i++)
           Serial.printf("%02X ", rxValue[i]);
-        Serial.println("\n*********");
+#endif
+        log_i("\n*********");
       }
     }
   }
@@ -188,9 +189,9 @@ class MyTXCallbacks : public BLECharacteristicCallbacks
     auto len = pCharacteristic->getDataLength();
     if (len > 0)
     {
-      Serial.println("*********");
-      Serial.print("Received TX: ");
-      Serial.println(pCharacteristic->getUUID().toString().c_str());
+      log_i("*********");
+      log_i("Received TX: %s", pCharacteristic->getUUID().toString().c_str());
+#if ARDUHAL_LOG_LEVEL >= ARDUHAL_LOG_LEVEL_INFO
       for (int i = 0; i < len; i++)
       {
         Serial.print("0x");
@@ -198,8 +199,9 @@ class MyTXCallbacks : public BLECharacteristicCallbacks
         Serial.print(rxValue[i], HEX);
         Serial.print(" ");
       }
-      Serial.println();
-      Serial.println("*********");
+#endif
+      log_i();
+      log_i("*********");
     }
   }
 };
@@ -211,9 +213,9 @@ void setup()
   // charRxUUID = BLEUUID().fromString(BLE_RX_UUID);
   // charTxUUID = BLEUUID().fromString(BLE_TX_UUID);
   // auto t = serviceUUID.toString();
-  // Serial.println(t.c_str());
-  // Serial.println(charRxUUID.toString().c_str());
-  // Serial.println(charTxUUID.toString().c_str());
+  // log_i(t.c_str());
+  // log_i(charRxUUID.toString().c_str());
+  // log_i(charTxUUID.toString().c_str());
   // Create the BLE Device
   NimBLEDevice::init("BMSNimClone");
   NimBLEDevice::setMTU(48);
@@ -295,11 +297,11 @@ void setup()
   // pAdvertising->setMaxPreferred(0x12);
   // NimBLEDevice::startAdvertising();
   pAdvertising->start();
-  Serial.println("Waiting a client connection to notify...");
+  log_i("Waiting a client connection to notify...");
 
   // pTxCharacteristic->setValue(basicInfoResponse, sizeof(basicInfoResponse));
   // pTxCharacteristic->notify();
-  // Serial.println("basic info send");
+  // log_i("basic info send");
 }
 
 void loop()
@@ -307,7 +309,7 @@ void loop()
 
   if (deviceConnected)
   {
-    // Serial.println("connection");
+    // log_i("connection");
 
     // pTxCharacteristic->setValue(&txValue, 1);
     // pTxCharacteristic->notify();
@@ -316,21 +318,21 @@ void loop()
     // switch (sendInfo)
     // {
     // case 1:
-    //   Serial.println("basic info send");
+    //   log_i("basic info send");
     //   // pTxCharacteristic->setValue(basicInfoResponse, sizeof(basicInfoResponse));
     //   // pTxCharacteristic->notify();
     //   sendInfo = 0;
     //   break;
 
     // case 2:
-    //   Serial.println("cell info send");
+    //   log_i("cell info send");
     //   // pTxCharacteristic->setValue(cellInfoResponse, sizeof(cellInfoResponse));
     //   // pTxCharacteristic->notify();
     //   sendInfo = 0;
     //   break;
 
     // case 3:
-    //   Serial.println("device info send");
+    //   log_i("device info send");
     //   // pTxCharacteristic->setValue(deviceInfoResponse, sizeof(deviceInfoResponse));
     //   // pTxCharacteristic->notify();
     //   sendInfo = 0;
@@ -343,7 +345,7 @@ void loop()
   {
     delay(500);                  // give the bluetooth stack the chance to get things ready
     pServer->startAdvertising(); // restart advertising
-    Serial.println("start advertising");
+    log_i("start advertising");
     oldDeviceConnected = deviceConnected;
   }
   // connecting
@@ -351,6 +353,6 @@ void loop()
   {
     // do stuff here on connecting
     oldDeviceConnected = deviceConnected;
-    Serial.println("connection");
+    log_i("connection");
   }
 }

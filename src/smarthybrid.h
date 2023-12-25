@@ -34,11 +34,10 @@ typedef enum
 
 typedef struct OBDdata_t
 {
-  uint16_t rpm;
-  uint16_t speed;
-  uint8_t load;
   TickType_t xLastUpdateTime;
-  bool coasting;
+  uint16_t RPM;
+  uint8_t Load;
+  bool Coasting;
 } OBDdata_t;
 
 typedef struct BMSInfo_t

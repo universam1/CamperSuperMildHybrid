@@ -94,7 +94,7 @@ void vOBD_Task(void *parameter)
       auto val = random(820, 1360);
 #endif
       {
-        obdData.rpm = val;
+        obdData.RPM = val;
         state++;
       }
       break;
@@ -109,9 +109,9 @@ void vOBD_Task(void *parameter)
       auto val = (v < 0) ? 0 : v;
 #endif
       {
-        obdData.load = val;
-        obdData.coasting = (obdData.rpm > 0 && obdData.load == 0);
-        log_i("RPM: %d   Load: %d   Coasting: %d", obdData.rpm, obdData.load, obdData.coasting);
+        obdData.Load = val;
+        obdData.Coasting = (obdData.RPM > 0 && obdData.Load == 0);
+        log_i("RPM: %d   Load: %d   Coasting: %d", obdData.RPM, obdData.Load, obdData.Coasting);
         obdData.xLastUpdateTime = xTaskGetTickCount();
         xTaskNotify(vTFT_Task_hdl, NotificationBits::OBD_UPDATE_BIT, eSetBits);
         state++;

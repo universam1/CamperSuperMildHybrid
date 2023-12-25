@@ -178,30 +178,37 @@ void vBMS_Polling(void *parameter)
       log_e("no notification for BMS request, timeout, restart");
       continue;
     }
+    byte mask = 1;
+    while (ulNotifiedValue)
+    {
+      switch (ulNotifiedValue & mask)
+      {
+      case NotificationBits::FET_ENABLE_BIT:
+        log_i("FET enable received");
+        writeValue(mosfetChargeCtrlRequest(true));
+        break;
 
-    if (ulNotifiedValue & NotificationBits::FET_ENABLE_BIT)
-    {
-      log_i("FET enable received");
-      writeValue(mosfetChargeCtrlRequest(true));
-    }
-    if (ulNotifiedValue & NotificationBits::FET_DISABLE_BIT)
-    {
-      log_i("FET disable received");
-      writeValue(mosfetChargeCtrlRequest(false));
-    }
-    if (ulNotifiedValue & NotificationBits::BMS_UPDATE_BIT)
-    {
-      log_i("BMS update received");
-      writeValue(basicRequest());
-    }
-    if (ulNotifiedValue & NotificationBits::CELL_UPDATE_BIT)
-    {
-      log_i("BMS cellinfo received");
-      writeValue(cellInfoRequest());
-    }
+      case NotificationBits::FET_DISABLE_BIT:
+        log_i("FET disable received");
+        writeValue(mosfetChargeCtrlRequest(false));
+        break;
 
-    else
-      log_e("no notification for BMS request");
+      case NotificationBits::BMS_UPDATE_BIT:
+        log_i("BMS update received");
+        writeValue(basicRequest());
+        break;
+
+      case NotificationBits::CELL_UPDATE_BIT:
+        log_i("BMS cellinfo received");
+        writeValue(cellInfoRequest());
+        break;
+
+      // default:
+        // log_e("unknown notification for BMS request %02X", ulNotifiedValue); // should not happen
+      }
+      ulNotifiedValue &= ~mask;
+      mask <<= 1;
+    }
   }
   vTaskDelete(NULL);
 }

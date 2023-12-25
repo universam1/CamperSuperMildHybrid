@@ -48,8 +48,8 @@ void intoCircularBuffer(uint8_t *pData, size_t length)
 void handle_rx_0x03()
 {
 
-  bmsInfo.Voltage = ((uint16_t)rbuffer[0] << 8 | rbuffer[1]) * 0.01;         // 0-1   Total voltage
-  bmsInfo.Current = ((int16_t)rbuffer[2] << 8 | (int16_t)rbuffer[3]) * 0.01; // 2-3   Current
+  bmsInfo.Voltage = ((uint16_t)rbuffer[0] << 8 | rbuffer[1]) * 0.01f; // 0-1   Total voltage
+  bmsInfo.Current = ((int16_t)((uint16_t)rbuffer[2] << 8 | rbuffer[3])) * 0.01f; // 2-3   Current
   bmsInfo.Power = bmsInfo.Voltage * bmsInfo.Current;
   // bmsInfo.balance_capacity = (uint16_t)(rbuffer[4] << 8) | (uint16_t)(rbuffer[5]);    // 4-5   Balance capacity
   // bmsInfo.rate_capacity = (uint16_t)(rbuffer[6] << 8) | (uint16_t)(rbuffer[7]);       // 6-7   Rate capacity
@@ -85,8 +85,8 @@ void handle_rx_0x03()
   for (uint8_t i = 0; i < 2; i++)
   {
     uint8_t ntc_index = 23 + (i * 2);
-    bmsInfo.NTC[i] = ((uint16_t)(rbuffer[ntc_index] << 8) | (rbuffer[ntc_index + 1])) * 0.1; // 23-24, 25-26 NTC temperature (0.1 degrees K per LSB)
-    bmsInfo.NTC[i] -= 273.15;                                                                // Convert Kelvin to Celsius
+    bmsInfo.NTC[i] = ((uint16_t)(rbuffer[ntc_index] << 8) | (rbuffer[ntc_index + 1])) * 0.1f; // 23-24, 25-26 NTC temperature (0.1 degrees K per LSB)
+    bmsInfo.NTC[i] -= 273.15f;                                                                // Convert Kelvin to Celsius
   }
   log_i("BMS Info: %.2fV %.2fA %.2fW %.1fC %.1fC C:%d D:%d",
         bmsInfo.Voltage, bmsInfo.Current, bmsInfo.Power, bmsInfo.NTC[0], bmsInfo.NTC[1], bmsInfo.chargeFET, bmsInfo.dischargeFET);
@@ -99,7 +99,7 @@ void handle_rx_0x04()
   for (uint8_t i = 0; i < 4; i++)
   {
     uint16_t cellmV = (uint16_t)(rbuffer[i * 2] << 8) | rbuffer[(i * 2) + 1];
-    bmsInfo.CellVoltages[i] = cellmV * 0.001; // 0-1, 2-3, 4-5, 6-7 Cell voltages (mV per LSB)
+    bmsInfo.CellVoltages[i] = cellmV * 0.001f; // 0-1, 2-3, 4-5, 6-7 Cell voltages (mV per LSB)
     minC = min(minC, cellmV);
     maxC = max(maxC, cellmV);
   }

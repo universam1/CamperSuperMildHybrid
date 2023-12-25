@@ -40,7 +40,7 @@ void manageCharging()
   static TickType_t xlastCoasting = 0;
   static TickType_t xlastBmsUpdate = 0;
 
-  if (obdData.coasting)
+  if (obdData.Coasting)
     xlastCoasting = bmsInfo.xLastUpdateTime;
 
   // prevent race condition with bms update
@@ -54,10 +54,10 @@ void manageCharging()
   if (bmsInfo.chargeFET)
   {
     // hysterese
-    if (obdData.load > 20 && xTaskGetTickCount() - xlastCoasting > pdMS_TO_TICKS(1000))
+    if (obdData.Load > 20 && xTaskGetTickCount() - xlastCoasting > pdMS_TO_TICKS(1000))
       log_i("Disabling charging delayed");
 
-    else if (obdData.load > 50)
+    else if (obdData.Load > 50)
       log_i("Disabling charging forced");
 
     else
@@ -69,10 +69,10 @@ void manageCharging()
   else
   {
     // start charging if load is below 20% and charging is not enabled
-    if (obdData.coasting)
+    if (obdData.Coasting)
       log_i("Enabling charging");
     // motor shutdown, enable the charge FET
-    else if (obdData.rpm == 0)
+    else if (obdData.RPM == 0)
       log_i("motor shutdown, re-enable the charge FET");
     else
       return;
@@ -140,7 +140,7 @@ void vTFT_Task(void *parameter)
         log_d("BMS update received");
         tft.invertDisplay(bmsInfo.chargeFET); // invert display if charging
         tft.setTextSize(2);
-        tft.setCursor(70, 0);
+        tft.setCursor(58, 0);
         tft.printf("%2.2fV", (bmsInfo.Voltage));
 
         tft.setCursor(70, 20);
@@ -169,12 +169,12 @@ void vTFT_Task(void *parameter)
         log_i("OBD update received");
         manageCharging();
 
-        drawProgressbar(0, 0, 60, 12, obdData.load);
+        drawProgressbar(0, 0, 50, 12, obdData.Load);
         tft.setCursor(0, 15);
-        tft.printf("%4dUmin", obdData.rpm);
+        tft.printf("%4dUmin", obdData.RPM);
 
         tft.setCursor(0, 25);
-        tft.printf("%3d%%", obdData.load);
+        tft.printf("%3d%%", obdData.Load);
         tft.display();
       }
     }
