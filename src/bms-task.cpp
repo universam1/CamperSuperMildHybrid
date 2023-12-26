@@ -126,6 +126,7 @@ bool connectToServer()
     return false;
   }
   log_d("The TX characteristic value was: %s", pTxRemoteCharacteristic->readValue().c_str());
+  xTaskNotify(vTFT_Task_hdl, NotificationBits::BMS_INIT_BIT, eSetBits);
 
   return true;
 }
@@ -257,5 +258,4 @@ void BMSStart()
   xTaskCreatePinnedToCore(vBMS_Scan, "SCAN", 5000, NULL, 1, &vBMS_Scan_hdl, 0);
   xTaskCreatePinnedToCore(vBMS_Polling, "POLL", 5000, NULL, 4, &vBMS_Polling_hdl, 0);
   xTaskCreatePinnedToCore(vBMSProcessTask, "BMSProcess", 5000, NULL, 5, &vBMSProcess_Task_hdl, 1);
-  xTaskNotify(vTFT_Task_hdl, NotificationBits::BMS_INIT_BIT, eSetBits);
 }

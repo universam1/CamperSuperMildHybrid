@@ -5,7 +5,7 @@
 
 TaskHandle_t vOBD_Task_hdl;
 
-#define SIMULATE_OBD
+// #define SIMULATE_OBD
 
 BluetoothSerial SerialBT;
 
@@ -27,24 +27,30 @@ OBDdata_t obdData;
 
 void vOBD_Task(void *parameter)
 {
+  while (true) {
+
   log_d("vOBD_Task: %d", xPortGetCoreID());
 
   static int state;
+
+  // WEIRD, crashes if I don't do this
+  vTaskDelay(pdMS_TO_TICKS(1000));
 
 #ifndef SIMULATE_OBD
   if (!SerialBT.begin(myName, true))
   {
     Serial.println("An error occurred initializing Bluetooth");
-    sleep(1000);
+    delay(1000);
     ESP.restart();
   }
-
+  log_d("sBT begin");
   if (!SerialBT.setPin(pin))
   {
     Serial.println("An error occurred setting the PIN");
-    sleep(1000);
+    delay(1000);
     ESP.restart();
   }
+  log_d("sBT setPin");
   bool connected;
 // connect(address) is fast (up to 10 secs max), connect(slaveName) is slow (up to 30 secs max) as it needs
 // to resolve slaveName to address first, but it allows to connect to different devices with the same name.
@@ -53,6 +59,7 @@ void vOBD_Task(void *parameter)
   connected = SerialBT.connect(slaveName);
   Serial.printf("Connecting to slave BT device named \"%s\"\n", slaveName.c_str());
 #else
+  log_d("sBT connect");
   connected = SerialBT.connect(address, 0, ESP_SPP_SEC_NONE, ESP_SPP_ROLE_MASTER);
   Serial.print("Connecting to slave BT device with MAC ");
   Serial.println(MACadd);
@@ -66,15 +73,15 @@ void vOBD_Task(void *parameter)
   {
     while (!SerialBT.connected(10000))
     {
-      Serial.println("Failed to connect. Make sure remote device is available and in range, then restart app.");
-      ESP.restart();
+      Serial.println("Failed to connect OBD. Make sure remote device is available");
+      continue;
     }
   }
 
-  if (!myELM327.begin(SerialBT, true, 2000))
+  if (!myELM327.begin(SerialBT, ARDUHAL_LOG_LEVEL >= ARDUHAL_LOG_LEVEL_DEBUG, 2000))
   {
     Serial.println("Couldn't connect to OBD scanner - Phase 2");
-    ESP.restart();
+    continue;
   }
 #endif
 
@@ -96,6 +103,7 @@ void vOBD_Task(void *parameter)
       {
         obdData.RPM = val;
         state++;
+        vTaskDelay(pdMS_TO_TICKS(50));
       }
       break;
     }
@@ -110,11 +118,12 @@ void vOBD_Task(void *parameter)
 #endif
       {
         obdData.Load = val;
-        obdData.Coasting = (obdData.RPM > 0 && obdData.Load == 0);
-        log_i("RPM: %d   Load: %d   Coasting: %d", obdData.RPM, obdData.Load, obdData.Coasting);
+        log_i("RPM: %d   Load: %d", obdData.RPM, obdData.Load);
         obdData.xLastUpdateTime = xTaskGetTickCount();
         xTaskNotify(vTFT_Task_hdl, NotificationBits::OBD_UPDATE_BIT, eSetBits);
+        xTaskNotify(vMngCoasting_Task_hdl, NotificationBits::OBD_UPDATE_BIT, eSetBits);
         state++;
+        vTaskDelay(pdMS_TO_TICKS(50));
       }
       break;
     }
@@ -136,11 +145,13 @@ void vOBD_Task(void *parameter)
     {
       myELM327.printError();
       state++;
+      vTaskDelay(pdMS_TO_TICKS(50));
     }
-    vTaskDelay(pdMS_TO_TICKS(10));
+    vTaskDelay(pdMS_TO_TICKS(2));
 #else
     vTaskDelay(pdMS_TO_TICKS(500));
 #endif
+  }
   }
   vTaskDelete(NULL);
 }

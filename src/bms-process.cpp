@@ -141,12 +141,12 @@ void BMSProcessFrame()
   // stop byte should be at
   if (rbuffer[header.dataLen + 2] != BMS_STOPBYTE)
   {
-    log_d("header: %02X %02X %02X %02X", header.start, header.type, header.status, header.dataLen);
-    log_d("size: %d", rbuffer.size());
+    log_e("Stoppbyte error %02X", rbuffer[header.dataLen + 1]);
+    log_e("header: %02X %02X %02X %02X", header.start, header.type, header.status, header.dataLen);
+    log_e("size: %d", rbuffer.size());
     for (size_t i = 0; i < rbuffer.size(); i++)
       Serial.printf("%02X ", rbuffer[i]);
     Serial.println();
-    log_e("Stoppbyte error %02X", rbuffer[header.dataLen + 1]);
     return;
   }
 
