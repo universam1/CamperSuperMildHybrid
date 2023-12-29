@@ -25,18 +25,9 @@ uint8_t address[6] = {0x66, 0x1e, 0x21, 0x00, 0xaa, 0xfe}; // Change this to ref
 
 OBDdata_t obdData;
 
-void vOBD_Task(void *parameter)
+// must be in strict order with BLE initialization
+void beginSerialBT()
 {
-  while (true) {
-
-  log_d("vOBD_Task: %d", xPortGetCoreID());
-
-  static int state;
-
-  // WEIRD, crashes if I don't do this
-  vTaskDelay(pdMS_TO_TICKS(1000));
-
-#ifndef SIMULATE_OBD
   if (!SerialBT.begin(myName, true))
   {
     Serial.println("An error occurred initializing Bluetooth");
@@ -50,108 +41,120 @@ void vOBD_Task(void *parameter)
     delay(1000);
     ESP.restart();
   }
-  log_d("sBT setPin");
-  bool connected;
-// connect(address) is fast (up to 10 secs max), connect(slaveName) is slow (up to 30 secs max) as it needs
-// to resolve slaveName to address first, but it allows to connect to different devices with the same name.
-// Set CoreDebugLevel to Info to view devices Bluetooth address and device names
-#ifdef USE_NAME
-  connected = SerialBT.connect(slaveName);
-  Serial.printf("Connecting to slave BT device named \"%s\"\n", slaveName.c_str());
-#else
-  log_d("sBT connect");
-  connected = SerialBT.connect(address, 0, ESP_SPP_SEC_NONE, ESP_SPP_ROLE_MASTER);
-  Serial.print("Connecting to slave BT device with MAC ");
-  Serial.println(MACadd);
-#endif
+}
 
-  if (connected)
-  {
-    Serial.println("Connected Successfully!");
-  }
-  else
-  {
-    while (!SerialBT.connected(10000))
-    {
-      Serial.println("Failed to connect OBD. Make sure remote device is available");
-      continue;
-    }
-  }
-
-  if (!myELM327.begin(SerialBT, ARDUHAL_LOG_LEVEL >= ARDUHAL_LOG_LEVEL_DEBUG, 2000))
-  {
-    Serial.println("Couldn't connect to OBD scanner - Phase 2");
-    continue;
-  }
-#endif
-
-  xTaskNotify(vTFT_Task_hdl, NotificationBits::OBD_INIT_BIT, eSetBits);
+void vOBD_Task(void *parameter)
+{
   while (true)
   {
-    state = state % LAST_PID;
-    log_d("state: %d", state);
-    switch (state)
-    {
-    case ENG_RPM:
-    {
+
+    log_d("vOBD_Task: %d", xPortGetCoreID());
+
+    static int state;
+
 #ifndef SIMULATE_OBD
-      auto val = myELM327.rpm();
-      if (myELM327.nb_rx_state == ELM_SUCCESS)
-#else
-      auto val = random(820, 1360);
-#endif
-      {
-        obdData.RPM = val;
-        state++;
-        vTaskDelay(pdMS_TO_TICKS(50));
-      }
-      break;
+
+    // connect(address) is fast (up to 10 secs max), connect(slaveName) is slow (up to 30 secs max) as it needs
+    // to resolve slaveName to address first, but it allows to connect to different devices with the same name.
+    // Set CoreDebugLevel to Info to view devices Bluetooth address and device names
+
+    log_i("Connecting to slave BT device named \"%s\"\n", slaveName.c_str());
+    if (SerialBT.connect(address, 0, ESP_SPP_SEC_NONE, ESP_SPP_ROLE_MASTER))
+    {
+      log_i("Connected Successfully!");
     }
-    case ENG_LOAD:
+    else
     {
-#ifndef SIMULATE_OBD
-      auto val = myELM327.engineLoad();
-      if (myELM327.nb_rx_state == ELM_SUCCESS)
-#else
-      auto v = random(-50, 100);
-      auto val = (v < 0) ? 0 : v;
-#endif
+      if (!SerialBT.connected(10000))
       {
-        obdData.Load = val;
-        log_i("RPM: %d   Load: %d", obdData.RPM, obdData.Load);
-        obdData.xLastUpdateTime = xTaskGetTickCount();
-        xTaskNotify(vTFT_Task_hdl, NotificationBits::OBD_UPDATE_BIT, eSetBits);
-        xTaskNotify(vMngCoasting_Task_hdl, NotificationBits::OBD_UPDATE_BIT, eSetBits);
-        state++;
-        vTaskDelay(pdMS_TO_TICKS(50));
+        log_e("Failed to connect OBD. Make sure remote device is available");
+        vTaskDelay(pdMS_TO_TICKS(1000));
+        continue;
       }
-      break;
     }
 
-      // case SPEED:
-      // {
-      //   kph = myELM327.kph();
-      //   if (myELM327.nb_rx_state == ELM_SUCCESS)
-      //   {
-      //     Serial.printf("km/h: %.0f", kph);
-      //     tft.drawStringf(0, 15, buffer, "km/h: %.0f", kph);
-      //     state++;
-      //   }
-      //   break;
-      // }
-    }
-#ifndef SIMULATE_OBD
-    if (myELM327.nb_rx_state != ELM_SUCCESS && myELM327.nb_rx_state != ELM_GETTING_MSG)
+    if (!myELM327.begin(SerialBT, ARDUHAL_LOG_LEVEL >= ARDUHAL_LOG_LEVEL_DEBUG, 2000))
     {
-      myELM327.printError();
-      state++;
-      vTaskDelay(pdMS_TO_TICKS(50));
+      log_e("Couldn't connect to OBD scanner - Phase 2");
+      vTaskDelay(pdMS_TO_TICKS(1000));
+      continue;
     }
-    vTaskDelay(pdMS_TO_TICKS(2));
-#else
-    vTaskDelay(pdMS_TO_TICKS(500));
 #endif
-  }
+
+    xTaskNotify(vTFT_Task_hdl, NotificationBits::OBD_INIT_BIT, eSetBits);
+    while (true)
+    {
+      if (!myELM327.connected)
+      {
+        log_e("Not connected to OBD");
+        vTaskDelay(pdMS_TO_TICKS(1000));
+        continue;
+      }
+
+      state = state % LAST_PID;
+      log_d("state: %d", state);
+      switch (state)
+      {
+      case ENG_RPM:
+      {
+#ifndef SIMULATE_OBD
+        auto val = myELM327.rpm();
+        if (myELM327.nb_rx_state == ELM_SUCCESS)
+#else
+        auto val = random(820, 1360);
+#endif
+        {
+          obdData.RPM = val;
+          state++;
+          vTaskDelay(pdMS_TO_TICKS(50));
+        }
+        break;
+      }
+      case ENG_LOAD:
+      {
+#ifndef SIMULATE_OBD
+        auto val = myELM327.engineLoad();
+        if (myELM327.nb_rx_state == ELM_SUCCESS)
+#else
+        auto v = random(-50, 100);
+        auto val = (v < 0) ? 0 : v;
+#endif
+        {
+          obdData.Load = val;
+          log_i("RPM: %d   Load: %d", obdData.RPM, obdData.Load);
+          obdData.xLastUpdateTime = xTaskGetTickCount();
+          xTaskNotify(vTFT_Task_hdl, NotificationBits::OBD_UPDATE_BIT, eSetBits);
+          xTaskNotify(vMngCoasting_Task_hdl, NotificationBits::OBD_UPDATE_BIT, eSetBits);
+          state++;
+          vTaskDelay(pdMS_TO_TICKS(50));
+        }
+        break;
+      }
+
+        // case SPEED:
+        // {
+        //   kph = myELM327.kph();
+        //   if (myELM327.nb_rx_state == ELM_SUCCESS)
+        //   {
+        //     Serial.printf("km/h: %.0f", kph);
+        //     tft.drawStringf(0, 15, buffer, "km/h: %.0f", kph);
+        //     state++;
+        //   }
+        //   break;
+        // }
+      }
+#ifndef SIMULATE_OBD
+      if (myELM327.nb_rx_state != ELM_SUCCESS && myELM327.nb_rx_state != ELM_GETTING_MSG)
+      {
+        myELM327.printError();
+        state++;
+        vTaskDelay(pdMS_TO_TICKS(50));
+      }
+      vTaskDelay(pdMS_TO_TICKS(2));
+#else
+      vTaskDelay(pdMS_TO_TICKS(500));
+#endif
+    }
   }
   vTaskDelete(NULL);
 }

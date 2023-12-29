@@ -71,7 +71,15 @@ void setup()
   Serial.printf("booting %d", __COUNTER__);
 
   xTaskCreatePinnedToCore(vTFT_Task, "TFT", 5000, NULL, 6, &vTFT_Task_hdl, 1);
-  BMSStart();
+
+  // strict order of initialization of BLE and BT
+  beginBLE();
+  beginSerialBT();
+
+  xTaskCreatePinnedToCore(vBMS_Scan, "SCAN", 5000, NULL, 1, &vBMS_Scan_hdl, 0);
+  xTaskCreatePinnedToCore(vBMS_Polling, "POLL", 3000, NULL, 2, &vBMS_Polling_hdl, 1);
+  xTaskCreatePinnedToCore(vBMSProcessTask, "BMSProcess", 5000, NULL, 5, &vBMSProcess_Task_hdl, 1);
+
   xTaskCreatePinnedToCore(vOBD_Task, "OBD", 5000, NULL, 1, &vOBD_Task_hdl, 1);
   xTaskCreatePinnedToCore(vMngCoasting_Task, "Coasting", 5000, NULL, 5, &vMngCoasting_Task_hdl, 1);
 

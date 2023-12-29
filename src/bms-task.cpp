@@ -8,7 +8,7 @@ TaskHandle_t vBMS_Task_hdl, vBMS_Scan_hdl, vBMS_Polling_hdl;
 BLERemoteCharacteristic *pTxRemoteCharacteristic;
 BLEAdvertisedDevice *bmsDevice = nullptr;
 BLEClient *pClient = nullptr;
-bool connectToServer(BLEAdvertisedDevice advertisedDevice);
+
 // The remote service we wish to connect to. Needs check/change when other BLE module used.
 static BLEUUID serviceUUID("0000ff00-0000-1000-8000-00805f9b34fb"); // xiaoxiang bms original module
 static BLEUUID charUUID_tx("0000ff02-0000-1000-8000-00805f9b34fb"); // xiaoxiang bms original module
@@ -215,14 +215,17 @@ void vBMS_Polling(void *parameter)
   vTaskDelete(NULL);
 }
 
-void vBMS_Scan(void *parameter)
+void beginBLE()
 {
   BLEDevice::init(myName);
   log_d("vBMS_Scan: %d", xPortGetCoreID());
   pClient = BLEDevice::createClient();
   log_d(" - Created client");
   pClient->setClientCallbacks(new MyClientCallback());
+}
 
+void vBMS_Scan(void *parameter)
+{
   BLEScan *pBLEScan = BLEDevice::getScan();
   pBLEScan->setAdvertisedDeviceCallbacks(new MyAdvertisedDeviceCallbacks());
   pBLEScan->setInterval(1349);
@@ -234,7 +237,6 @@ void vBMS_Scan(void *parameter)
     if (connectToServer())
     {
       log_d("connected to the BLE Server.");
-      // vTaskResume(vBMS_Polling_hdl);
       vTaskDelay(pdMS_TO_TICKS(1000));
       continue;
     }
@@ -251,11 +253,4 @@ void vBMS_Scan(void *parameter)
     }
   }
   vTaskDelete(NULL);
-}
-
-void BMSStart()
-{
-  xTaskCreatePinnedToCore(vBMS_Scan, "SCAN", 5000, NULL, 1, &vBMS_Scan_hdl, 0);
-  xTaskCreatePinnedToCore(vBMS_Polling, "POLL", 5000, NULL, 4, &vBMS_Polling_hdl, 0);
-  xTaskCreatePinnedToCore(vBMSProcessTask, "BMSProcess", 5000, NULL, 5, &vBMSProcess_Task_hdl, 1);
 }

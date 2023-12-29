@@ -57,9 +57,9 @@ extern OBDdata_t obdData;
 extern BMSInfo_t bmsInfo;
 extern TickType_t xBmsLastMsg;
 
-void BMSStart();
 void intoCircularBuffer(uint8_t *pData, size_t length);
-void vBMSProcessTask(void *parameter);
+void beginSerialBT();
+void beginBLE();
 std::vector<uint8_t> basicRequest();
 std::vector<uint8_t> cellInfoRequest();
 std::vector<uint8_t> mosfetChargeCtrlRequest(bool charge);
@@ -68,7 +68,13 @@ extern TaskHandle_t vOBD_Task_hdl,
     vTFT_Task_hdl,
     vBMSProcess_Task_hdl,
     vBMS_Polling_hdl,
-    vMngCoasting_Task_hdl;
+    vMngCoasting_Task_hdl,
+    vBMS_Scan_hdl,
+    vBMS_Polling_hdl;
+
+void vBMSProcessTask(void *parameter);
 void vOBD_Task(void *parameter);
 void vTFT_Task(void *parameter);
+void vBMS_Scan(void *parameter);
+void vBMS_Polling(void *parameter);
 #endif // _GLOBALS_H
