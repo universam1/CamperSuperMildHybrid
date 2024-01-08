@@ -6,7 +6,7 @@
 #include <Arduino.h>
 #include <BLEDevice.h>
 
-#define myName "SmartHybrid"
+#define MYNAME "SmartHybrid"
 
 #define BMS_UPDATE_DELAY 50 // milliseconds
 #define BMS_BASIC_INFO_DELAY 250

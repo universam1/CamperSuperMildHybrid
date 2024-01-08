@@ -28,7 +28,7 @@ OBDdata_t obdData;
 // must be in strict order with BLE initialization
 void beginSerialBT()
 {
-  if (!SerialBT.begin(myName, true))
+  if (!SerialBT.begin(MYNAME, true))
   {
     Serial.println("An error occurred initializing Bluetooth");
     delay(1000);

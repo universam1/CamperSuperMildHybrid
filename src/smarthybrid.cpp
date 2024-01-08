@@ -74,6 +74,7 @@ void setup()
 
   // strict order of initialization of BLE and BT
   beginBLE();
+  // vTaskDelay(pdMS_TO_TICKS(1000));
   beginSerialBT();
 
   xTaskCreatePinnedToCore(vBMS_Scan, "SCAN", 5000, NULL, 1, &vBMS_Scan_hdl, 0);

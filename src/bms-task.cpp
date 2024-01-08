@@ -217,15 +217,16 @@ void vBMS_Polling(void *parameter)
 
 void beginBLE()
 {
-  BLEDevice::init(myName);
+  BLEDevice::init(MYNAME);
   log_d("vBMS_Scan: %d", xPortGetCoreID());
-  pClient = BLEDevice::createClient();
-  log_d(" - Created client");
-  pClient->setClientCallbacks(new MyClientCallback());
 }
 
 void vBMS_Scan(void *parameter)
 {
+  pClient = BLEDevice::createClient();
+  log_d(" - Created client");
+  pClient->setClientCallbacks(new MyClientCallback());
+
   BLEScan *pBLEScan = BLEDevice::getScan();
   pBLEScan->setAdvertisedDeviceCallbacks(new MyAdvertisedDeviceCallbacks());
   pBLEScan->setInterval(1349);
